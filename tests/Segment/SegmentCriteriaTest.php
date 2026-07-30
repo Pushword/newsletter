@@ -17,11 +17,49 @@ final class SegmentCriteriaTest extends TestCase
             ['field' => 'prop.lastBoughtProduct', 'op' => '=', 'value' => 'tmb'],
         ]);
 
-        self::assertSame([
+        self::assertSame(['any' => false, 'conditions' => [
             ['field' => 'tag', 'op' => 'has', 'value' => 'AmTrek'],
             ['field' => 'createdAt', 'op' => 'olderThan', 'value' => '7d'],
             ['field' => 'prop.lastBoughtProduct', 'op' => '=', 'value' => 'tmb'],
-        ], $normalized);
+        ]], $normalized);
+    }
+
+    /** A bare list is ANDed; `any` is the one thing a rule has to say out loud. */
+    public function testAGroupCarriesItsOperator(): void
+    {
+        $conditions = [['field' => 'tag', 'op' => 'has', 'value' => 'AmTrek']];
+
+        self::assertSame(['any' => true, 'conditions' => $conditions], SegmentCriteria::normalize(['any' => $conditions]));
+        self::assertSame(['any' => false, 'conditions' => $conditions], SegmentCriteria::normalize(['all' => $conditions]));
+        self::assertSame(['any' => false, 'conditions' => $conditions], SegmentCriteria::normalize($conditions));
+    }
+
+    /**
+     * The textarea's round trip must not lose the operator: an `any` coming back
+     * as a bare list would silently become an `all`, and a segment written to
+     * reach two groups would reach only their intersection.
+     */
+    public function testTheJsonRoundTripKeepsTheOperator(): void
+    {
+        $rule = ['any' => [['field' => 'tag', 'op' => 'has', 'value' => 'AmTrek']]];
+
+        self::assertSame($rule, SegmentCriteria::fromJson(SegmentCriteria::toJson($rule)));
+    }
+
+    public function testAGroupMustHoldAList(): void
+    {
+        $this->expectException(SegmentException::class);
+        $this->expectExceptionMessageMatches('/must hold a list of conditions/');
+
+        SegmentCriteria::normalize(['any' => 'AmTrek']);
+    }
+
+    public function testARuleCannotBeBothAnyAndAll(): void
+    {
+        $this->expectException(SegmentException::class);
+        $this->expectExceptionMessageMatches('/not both/');
+
+        SegmentCriteria::normalize(['any' => [], 'all' => []]);
     }
 
     public function testValuelessOperatorsDropTheirValue(): void
@@ -30,12 +68,12 @@ final class SegmentCriteriaTest extends TestCase
             ['field' => 'prop.x', 'op' => 'isSet', 'value' => 'ignored'],
         ]);
 
-        self::assertSame('', $normalized[0]['value']);
+        self::assertSame('', $normalized['conditions'][0]['value']);
     }
 
     public function testAnEmptyListIsValid(): void
     {
-        self::assertSame([], SegmentCriteria::normalize([]));
+        self::assertSame(['any' => false, 'conditions' => []], SegmentCriteria::normalize([]));
     }
 
     public function testUnknownFieldIsRejected(): void

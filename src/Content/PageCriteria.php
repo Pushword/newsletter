@@ -2,13 +2,15 @@
 
 namespace Pushword\Newsletter\Content;
 
+use Pushword\Newsletter\Segment\CriteriaGroup;
 use Pushword\Newsletter\Segment\SegmentException;
 
 /**
  * The page language: which published pages a {@see \Pushword\Newsletter\Entity\ContentTrigger}
  * reacts to. Same shape as {@see \Pushword\Newsletter\Segment\SegmentCriteria} —
- * a flat list of conditions, all of which must hold, no OR and no nesting — so
- * there is one thing to learn for both sides of a trigger:
+ * a flat list of conditions, all of which must hold, or one `{"any": [...]}`
+ * group where a single one is enough — so there is one thing to learn for both
+ * sides of a trigger:
  *
  *     [
  *       {"field": "ancestor",         "op": "=",          "value": "blog"},
@@ -18,9 +20,11 @@ use Pushword\Newsletter\Segment\SegmentException;
  *
  * It says *which* pages, never *when*: the wait is the trigger's own delay.
  *
- * Having no OR, it leans on the page tree instead: `parentPage` names one
- * rubric, `ancestor` names the section a rubric belongs to — which is what
- * keeps a blog split in rubrics down to a single condition.
+ * Reach for what already groups pages before reaching for `any`, the two axes a
+ * `pages_list` search leans on: the tree — `parentPage` names one rubric,
+ * `ancestor` the section it belongs to — and `tag`. Either keeps a blog split
+ * in rubrics down to a single condition, and keeps covering the rubric added
+ * next month, which an enumeration does not.
  *
  * A malformed list raises {@see SegmentException}, the same way a malformed
  * segment does — one grammar, one kind of mistake, one thing to catch.
@@ -35,6 +39,9 @@ final class PageCriteria
         'template' => ['=', '!='],
         'parentPage' => ['=', '!='],
         'ancestor' => ['=', '!='],
+        // A page carries tags as a contact does, so it reads as one on the
+        // segment side: `has`, not `=`.
+        'tag' => ['has', 'hasNot'],
     ];
 
     public const array PROP_OPERATORS = ['=', '!=', 'isSet', 'isNotSet'];
@@ -43,19 +50,33 @@ final class PageCriteria
     public const array VALUELESS_OPERATORS = ['isSet', 'isNotSet'];
 
     /**
-     * Validate and normalise a raw criteria list.
+     * Validate and normalise a raw rule: its operator, and its conditions.
      *
      * @param array<mixed> $criteria
      *
-     * @return array<int, array{field: string, op: string, value: string}>
+     * @return array{any: bool, conditions: list<array{field: string, op: string, value: string}>}
      *
      * @throws SegmentException
      */
     public static function normalize(array $criteria): array
     {
+        ['any' => $any, 'conditions' => $conditions] = CriteriaGroup::unwrap($criteria);
+
+        return ['any' => $any, 'conditions' => self::normalizeConditions($conditions)];
+    }
+
+    /**
+     * @param array<mixed> $conditions
+     *
+     * @return list<array{field: string, op: string, value: string}>
+     *
+     * @throws SegmentException
+     */
+    private static function normalizeConditions(array $conditions): array
+    {
         $normalized = [];
 
-        foreach (array_values($criteria) as $index => $condition) {
+        foreach (array_values($conditions) as $index => $condition) {
             if (! \is_array($condition)) {
                 throw new SegmentException(\sprintf('Condition #%d is not an object.', $index));
             }
@@ -103,7 +124,7 @@ final class PageCriteria
     }
 
     /**
-     * @return array<int, array{field: string, op: string, value: string}>
+     * @return array<mixed> the rule, in the shape it is stored
      *
      * @throws SegmentException
      */
@@ -121,7 +142,9 @@ final class PageCriteria
             throw new SegmentException('Criteria must be a JSON list of conditions.');
         }
 
-        return self::normalize($decoded);
+        $rule = self::normalize($decoded);
+
+        return CriteriaGroup::wrap($rule['any'], $rule['conditions']);
     }
 
     public static function isProperty(string $field): bool
