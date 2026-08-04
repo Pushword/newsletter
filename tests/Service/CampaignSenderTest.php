@@ -147,6 +147,76 @@ final class CampaignSenderTest extends AbstractNewsletterTestCase
         self::assertSame(CampaignStatus::Sent, $campaign->status);
     }
 
+    /** Consenting and being reachable are two questions; arming asks both. */
+    public function testArmingIgnoresContactsWithNoAddress(): void
+    {
+        $audience = $this->createAudience();
+        $this->createContact($audience, 'in@example.tld');
+        $this->createPhoneContact($audience, '+33612345678');
+
+        $campaign = $this->createCampaign($audience);
+
+        self::assertSame(1, $this->sender()->arm($campaign));
+        self::assertSame('in@example.tld', $this->recipients($campaign)[0]->contact->email);
+    }
+
+    /** An address cleared between arming and sending is not a delivery failure either. */
+    public function testAContactWhoLostTheirAddressAfterArmingIsSkipped(): void
+    {
+        $audience = $this->createAudience();
+        $contact = $this->createContact($audience, 'leaving@example.tld');
+        $campaign = $this->createCampaign($audience);
+        $this->sender()->arm($campaign);
+
+        $contact->phone = '+33612345678';
+        $contact->email = null;
+
+        $this->entityManager->flush();
+
+        self::assertSame(0, $this->sender()->drain($campaign, 10));
+        self::assertEmailCount(0);
+        self::assertSame(RecipientState::Skipped, $this->recipients($campaign)[0]->state);
+        self::assertSame(0, $campaign->failedCount);
+    }
+
+    /**
+     * One campaign, one broadcast, each reader in their own language — and the
+     * one language nobody wrote gets the campaign's own text rather than an
+     * empty mail.
+     */
+    public function testEachRecipientIsSentTheirOwnLanguage(): void
+    {
+        $audience = $this->createAudience(rateSeconds: 1);
+        $this->createContact($audience, 'de@example.tld', locale: 'de');
+        $this->createContact($audience, 'ch@example.tld', locale: 'de-CH');
+        $this->createContact($audience, 'it@example.tld', locale: 'it');
+
+        $campaign = $this->createCampaign($audience, subject: 'Hello %name%');
+        $campaign->translations = ['de' => ['subject' => 'Hallo %name%', 'bodyMarkdown' => 'Lies das.']];
+
+        $this->entityManager->flush();
+
+        $this->sender()->arm($campaign);
+        $this->sender()->drain($campaign, 1);
+        $this->rewindLastSend($campaign, 600);
+
+        self::assertSame(2, $this->sender()->drain($campaign, 10));
+
+        $subjects = [];
+        foreach (self::getMailerMessages() as $email) {
+            self::assertInstanceOf(Email::class, $email);
+            $subjects[$email->getTo()[0]->getAddress()] = $email->getSubject();
+        }
+
+        self::assertSame([
+            'de@example.tld' => 'Hallo Test',
+            // The language part of `de-CH`: eight languages over seventeen hosts
+            // are not written seventeen times.
+            'ch@example.tld' => 'Hallo Test',
+            'it@example.tld' => 'Hello Test',
+        ], $subjects);
+    }
+
     public function testATransportFailureIsRecordedOnTheRecipient(): void
     {
         $audience = $this->createAudience();

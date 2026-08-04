@@ -66,6 +66,7 @@ newsletter:
     fieldset:
       audience: Audience & scheduling
       content: Content
+      languages: Languages
       performance: Performance
     field:
       audience: Audience
@@ -87,6 +88,8 @@ newsletter:
       slug.help: Carried as utm_campaign. Derived from the subject when left empty, and prefixed with the send date (YYMMDD) once the newsletter is sent.
       status: Status
       subject: Subject
+      translations: Translations
+      translations.help: 'JSON, one entry per locale: {"de": {"subject": "…", "preheader": "…", "bodyMarkdown": "…"}}. A field left out falls back on the text above, so a reader never gets an empty mail. Leave empty to mail everybody the same text.'
       unsubscribed: Unsubscribed
     flash:
       backToDraft: Schedule cancelled — back to draft.
@@ -97,9 +100,15 @@ newsletter:
     test:
       cancel: Cancel
       help: Delivers the newsletter to the addresses below, with the subject prefixed by [TEST]. Contacts, recipients and stats are untouched.
+      locale: Language
+      locale.default: The text above (default)
+      locale.help: Which translation to proofread. The mail around the body is written in it too.
       recipients: Recipient address(es)
       recipients.help: Comma-, space- or newline-separated. Defaults to your address.
       title: Send a test
+    translations:
+      invalidJson: Translations must be a JSON object keyed by locale.
+      invalidLocale: 'Translation "%locale%" must be an object of subject, preheader and bodyMarkdown.'
   confirm:
     body: Thank you for signing up! To start receiving our emails, click the button below to confirm your email address.
     button: Confirm my subscription
@@ -129,10 +138,14 @@ newsletter:
       customProperties: Custom properties
       customProperties.help: YAML key-value pairs. Segments read them as prop.<key>.
       email: Email
+      email.taken: Another contact of this list already uses this address.
       locale: Locale
       name: Name
       optinHost: Opt-in host
       optinIp: Opt-in IP
+      phone: Phone
+      phone.help: Kept as digits and a leading +. A contact keyed on a number alone is stored, tagged and segmented, and is never mailed.
+      phone.taken: Another contact of this list already uses this number. Joining the two is a deliberate merge, not something this form does.
       registeredAt: Registered at
       source: Source
       status: Status
@@ -141,18 +154,21 @@ newsletter:
     flash:
       confirmationSent: Opt-in opened — a confirmation mail is on its way.
       confirmed: Confirmed by hand.
-      invalidOptIn: Pick a list and a valid address.
+      invalidOptIn: Pick a list and either a valid address or a phone number.
       invalidToken: Invalid token, please retry.
       noAudience: Create an audience first.
       notFound: Contact not found.
       resubscribed: Back on the list.
       subscribed: Subscribed.
       unsubscribed: Unsubscribed.
+    identifier:
+      missing: A contact needs an email address or a phone number.
     optIn:
       alreadyConsented: They already consented
       alreadyConsented.help: Skips the confirmation mail and subscribes right away. Only for consent you can produce — a paper form, a written reply.
       cancel: Cancel
       help: One list at a time, as the public form does. An address already on another list gets a second subscription, with its own consent record.
+      identifier.help: Either one is enough. A contact with a number and no address is never mailed — no confirmation is asked, and they are subscribed right away.
       title: Opt in a contact
     subscriptions:
       help: The same address on every list of this install. The one being edited is highlighted.

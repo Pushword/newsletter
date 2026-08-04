@@ -2,6 +2,7 @@
 
 namespace Pushword\Newsletter\Service;
 
+use LogicException;
 use Pushword\Core\Site\SiteRegistry;
 use Pushword\Newsletter\Entity\Audience;
 use Pushword\Newsletter\Entity\AutomationStep;
@@ -31,14 +32,22 @@ final readonly class NewsletterMailer
     ) {
     }
 
+    /**
+     * The body is resolved here rather than frozen when the campaign was armed:
+     * a recipient row records *who*, never *what*. Freezing the rendered text
+     * per recipient would multiply the ledger by the body size for no gain, and
+     * would make fixing a typo mid-campaign impossible.
+     */
     public function sendCampaign(Campaign $campaign, Contact $contact): void
     {
+        $content = $campaign->contentFor($contact->locale);
+
         $this->send(
             $campaign->audience ?? $contact->audience,
             $contact,
-            $campaign->subject,
-            $campaign->bodyMarkdown,
-            $campaign->preheader,
+            $content['subject'],
+            $content['bodyMarkdown'],
+            $content['preheader'],
             UtmTag::forCampaign($campaign),
         );
     }
@@ -89,12 +98,18 @@ final readonly class NewsletterMailer
         $this->mailer->send($email);
     }
 
-    /** Preview a body by mailing a copy that touches no contact and no counter. */
-    public function sendTest(Audience $audience, string $subject, string $bodyMarkdown, ?string $preheader, string $address, ?UtmTag $utmTag): void
+    /**
+     * Preview a body by mailing a copy that touches no contact and no counter.
+     *
+     * The locale is what the test contact carries, so a translation is proofread
+     * the way its readers will receive it — the chassis around the body is
+     * translated in it too. Empty means the audience host's own language.
+     */
+    public function sendTest(Audience $audience, string $subject, string $bodyMarkdown, ?string $preheader, string $address, ?UtmTag $utmTag, string $locale = ''): void
     {
         $contact = new Contact($audience, $address);
         $contact->name = 'Test';
-        $contact->locale = $this->siteRegistry->get($audience->mainHost)->locale;
+        $contact->locale = '' !== trim($locale) ? $locale : $this->siteRegistry->get($audience->mainHost)->locale;
 
         // A test recipient has no persisted token, so the unsubscribe link would
         // 404. Point it at the site instead — the point is to read the body.
@@ -126,9 +141,13 @@ final readonly class NewsletterMailer
 
     private function baseEmail(Audience $audience, Contact $contact): Email
     {
+        // Whoever got here already asked `isMailable()`; saying which contact
+        // slipped through beats a TypeError on a null address.
+        $to = $contact->email ?? throw new LogicException('Contact #'.($contact->id ?? '?').' has no email address.');
+
         $email = new Email()
             ->from(new Address($audience->fromEmail, $audience->fromName))
-            ->to(new Address($contact->email, $contact->name));
+            ->to(new Address($to, $contact->name));
 
         $replyTo = $audience->replyTo;
         if (null !== $replyTo) {

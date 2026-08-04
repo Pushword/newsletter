@@ -66,6 +66,7 @@ newsletter:
     fieldset:
       audience: Audience et programmation
       content: Contenu
+      languages: Langues
       performance: Performance
     field:
       audience: Audience
@@ -87,6 +88,8 @@ newsletter:
       slug.help: Transmis comme utm_campaign. Déduit de l'objet si laissé vide, et préfixé par la date d'envoi (AAMMJJ) au moment de l'envoi.
       status: Statut
       subject: Objet
+      translations: Traductions
+      translations.help: 'JSON, une entrée par langue : {"de": {"subject": "…", "preheader": "…", "bodyMarkdown": "…"}}. Un champ absent reprend le texte ci-dessus, donc un lecteur ne reçoit jamais un mail vide. Laissez vide pour envoyer le même texte à tout le monde.'
       unsubscribed: Désinscrits
     flash:
       backToDraft: Programmation annulée — retour au brouillon.
@@ -97,9 +100,15 @@ newsletter:
     test:
       cancel: Annuler
       help: Envoie la newsletter aux adresses ci-dessous, objet préfixé par [TEST]. Les contacts, destinataires et statistiques ne sont pas touchés.
+      locale: Langue
+      locale.default: Le texte ci-dessus (défaut)
+      locale.help: Quelle traduction relire. Le mail autour du corps est écrit dans cette langue aussi.
       recipients: Adresse(s) destinataire(s)
       recipients.help: Séparées par des virgules, espaces ou retours à la ligne. Votre adresse par défaut.
       title: Envoyer un test
+    translations:
+      invalidJson: Les traductions doivent être un objet JSON indexé par langue.
+      invalidLocale: 'La traduction « %locale% » doit être un objet contenant subject, preheader et bodyMarkdown.'
   confirm:
     body: Merci pour votre inscription ! Pour commencer à recevoir nos mails, cliquez sur le bouton ci-dessous afin de confirmer votre adresse e-mail.
     button: Je confirme mon inscription
@@ -129,10 +138,14 @@ newsletter:
       customProperties: Propriétés personnalisées
       customProperties.help: Paires clé-valeur en YAML. Les segments les lisent via prop.<clé>.
       email: Email
+      email.taken: Un autre contact de cette liste utilise déjà cette adresse.
       locale: Langue
       name: Prénom
       optinHost: Hôte d'inscription
       optinIp: IP d'inscription
+      phone: Téléphone
+      phone.help: Conservé en chiffres, avec le + initial. Un contact identifié par un numéro seul est stocké, tagué et segmenté, et n'est jamais destinataire d'un mail.
+      phone.taken: Un autre contact de cette liste utilise déjà ce numéro. Les réunir est une fusion délibérée, pas quelque chose que ce formulaire fait.
       registeredAt: Inscrit le
       source: Source
       status: Statut
@@ -141,18 +154,21 @@ newsletter:
     flash:
       confirmationSent: Inscription ouverte — un mail de confirmation part.
       confirmed: Confirmé à la main.
-      invalidOptIn: Choisissez une liste et une adresse valide.
+      invalidOptIn: Choisissez une liste et, au choix, une adresse valide ou un numéro de téléphone.
       invalidToken: Jeton invalide, merci de réessayer.
       noAudience: Créez d'abord une audience.
       notFound: Contact introuvable.
       resubscribed: Réinscrit.
       subscribed: Inscrit.
       unsubscribed: Désinscrit.
+    identifier:
+      missing: Un contact a besoin d'une adresse email ou d'un numéro de téléphone.
     optIn:
       alreadyConsented: A déjà consenti
       alreadyConsented.help: Passe le mail de confirmation et inscrit directement. Uniquement pour un consentement que vous pouvez produire — un formulaire papier, une réponse écrite.
       cancel: Annuler
       help: Une liste à la fois, comme le formulaire public. Une adresse déjà présente sur une autre liste reçoit une seconde inscription, avec son propre consentement.
+      identifier.help: L'un ou l'autre suffit. Un contact avec un numéro et sans adresse ne reçoit aucun mail — rien à confirmer, il est inscrit directement.
       title: Inscrire un contact
     subscriptions:
       help: La même adresse sur toutes les listes de cette installation. Celle en cours d'édition est surlignée.
