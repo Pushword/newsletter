@@ -10,6 +10,7 @@ use Pushword\Newsletter\Entity\Audience;
 use Pushword\Newsletter\Entity\AutomationDelivery;
 use Pushword\Newsletter\Entity\CampaignRecipient;
 use Pushword\Newsletter\Entity\Contact;
+use Pushword\Newsletter\Entity\ContactEvent;
 use Pushword\Newsletter\Repository\AutomationDeliveryRepository;
 use Pushword\Newsletter\Repository\CampaignRecipientRepository;
 use Pushword\Newsletter\Repository\ContactRepository;
@@ -21,6 +22,13 @@ use Pushword\Newsletter\Repository\EnrollmentRepository;
  * Subscribing is idempotent: a second submission of an address already on the
  * list updates what it knows about the person and never re-opens a confirmation
  * they already answered. Leaving is terminal until the person opts in again.
+ *
+ * Because it is the single place, it is also where the history is written: every
+ * method below that moves a subscription appends a {@see ContactEvent}, so the
+ * dates on the contact stay the current state and the ledger keeps what they
+ * overwrite. Each takes the provenance of *that* act — the page, the link, the
+ * editor, the API, the bounce mailbox — rather than reusing the opt-in's, which
+ * would date the evidence to the wrong moment.
  */
 final readonly class ContactManager
 {
@@ -104,13 +112,15 @@ final readonly class ContactManager
 
         // Provenance is written on the first opt-in and on any re-opt-in, never
         // on a repeat submission by someone already subscribed: the evidence
-        // must point at the moment consent was actually given.
+        // must point at the moment consent was actually given. Which is also why
+        // a repeat submission appends no row — nothing about the consent moved.
         $reopening = $isNew || ! $contact->isSubscribed();
         if ($reopening) {
             $contact->source = $source;
             $contact->optinHost = $optinHost;
             $contact->optinIp = $optinIp;
             $contact->optIn($requireDoubleOptIn);
+            $this->entityManager->persist(ContactEvent::optIn($contact, $source, $optinHost, $optinIp));
         }
 
         // Send before flushing: a transport refusing the address (a typo most
@@ -119,6 +129,68 @@ final readonly class ContactManager
             $this->mailer->sendConfirmation($contact);
         }
 
+        $this->entityManager->flush();
+
+        return $contact;
+    }
+
+    /**
+     * Carry a live subscription onto a second list, when an audience is split in
+     * two.
+     *
+     * Two planes, and confusing them is how a partition destroys evidence. The
+     * **state** is the origin's: the date the consent was given, where it came
+     * from, the click-tracking consent that went with it. The partition divides
+     * that consent, it does not renew it, and stamping today's date on the new
+     * row would erase the only date worth producing. The **ledger** gets a line
+     * dated today, naming the list it came from — because the act performed
+     * today is the making of a row, and nobody consented to anything.
+     *
+     * `$target` is an audience somebody already created: its name, its host, its
+     * sender, its double opt-in rule and its vocabulary are a dozen editorial
+     * decisions, taken once on a screen and not improvised inside a loop.
+     *
+     * Idempotent, because a switch-over is re-run — interrupted, resumed, aimed
+     * at a subset. A row already on the second list comes back untouched
+     * *whatever its status*: somebody who left the second list has left it, and
+     * a second pass must not raise them from it.
+     *
+     * A long run owes one thing back: it resolves its subscribed set up front,
+     * so somebody leaving while it is still going will throw on their turn. That
+     * is the right outcome — no row should be made for them — so re-check
+     * {@see Contact::isSubscribed()} just before the call and count the skips.
+     *
+     * @throws InvalidArgumentException when the subscription is not a live one, or when the
+     *                                  target is the list the contact is already on
+     */
+    public function splitFrom(Contact $origin, Audience $target): Contact
+    {
+        if (! $origin->isSubscribed()) {
+            throw new InvalidArgumentException(\sprintf('Contact #%s is %s: only a live subscription can be carried to another list.', $origin->id ?? '?', $origin->getStatusLabel()));
+        }
+
+        if ($origin->audience->id === $target->id) {
+            throw new InvalidArgumentException('A contact cannot be split onto the list it is already on.');
+        }
+
+        $existing = null !== $origin->email
+            ? $this->contactRepository->findOneByEmail($target, $origin->email)
+            : $this->contactRepository->findOneByPhone($target, (string) $origin->phone);
+
+        if ($existing instanceof Contact) {
+            return $existing;
+        }
+
+        $contact = Contact::splitFrom($origin, $target);
+
+        // What the second list has a word for, and nothing else: a tag says what
+        // somebody is on *this* list for, and the origin's vocabulary is its own.
+        foreach ($target->filterInterests($origin->getTagList()) as $interest) {
+            $contact->addTag($interest);
+        }
+
+        $this->entityManager->persist($contact);
+        $this->entityManager->persist(ContactEvent::split($contact, $origin->audience->slug));
         $this->entityManager->flush();
 
         return $contact;
@@ -153,7 +225,7 @@ final readonly class ContactManager
      * pending — clicking that link expresses it either way — and never
      * overwriting an earlier date: the first consent is the one that dates it.
      */
-    public function confirm(Contact $contact, bool $clickTrackingConsent = false): void
+    public function confirm(Contact $contact, bool $clickTrackingConsent = false, ?string $source = null, ?string $host = null, ?string $ip = null): void
     {
         if ($clickTrackingConsent) {
             $contact->clickTrackingConsentAt ??= new DateTimeImmutable();
@@ -161,18 +233,20 @@ final readonly class ContactManager
 
         if ($contact->isPending()) {
             $contact->confirm();
+            $this->entityManager->persist(ContactEvent::confirmed($contact, $source, $host, $ip));
         }
 
         $this->entityManager->flush();
     }
 
-    public function unsubscribe(Contact $contact): void
+    public function unsubscribe(Contact $contact, ?string $source = null): void
     {
         if (null !== $contact->unsubscribedAt) {
             return;
         }
 
         $contact->unsubscribe();
+        $this->entityManager->persist(ContactEvent::unsubscribed($contact, $source));
         $this->attributeToLastMail($contact, 'unsub');
         $this->stopEnrollments($contact);
         $this->entityManager->flush();
@@ -189,13 +263,14 @@ final readonly class ContactManager
      * A bounced address is not revived this way. The mail server refused it; a
      * click says nothing about that.
      */
-    public function resubscribe(Contact $contact): void
+    public function resubscribe(Contact $contact, ?string $source = null, ?string $host = null, ?string $ip = null): void
     {
         if (null === $contact->unsubscribedAt || null !== $contact->bouncedAt) {
             return;
         }
 
         $contact->optIn(false);
+        $this->entityManager->persist(ContactEvent::resubscribed($contact, $source, $host, $ip));
 
         // The campaign credited with the opt-out gets its count back. It is the
         // same row `unsubscribe()` picked: nothing was sent to them in between —
@@ -210,13 +285,14 @@ final readonly class ContactManager
     }
 
     /** A permanent delivery failure: the address leaves every future segment. */
-    public function markBounced(Contact $contact): void
+    public function markBounced(Contact $contact, ?string $source = null): void
     {
         if (null !== $contact->bouncedAt) {
             return;
         }
 
         $contact->markBounced();
+        $this->entityManager->persist(ContactEvent::bounced($contact, $source));
         $this->attributeToLastMail($contact, 'bounce');
         $this->stopEnrollments($contact);
         $this->entityManager->flush();

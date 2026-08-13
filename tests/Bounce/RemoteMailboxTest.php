@@ -7,6 +7,7 @@ use PHPUnit\Framework\Attributes\Group;
 use Pushword\Newsletter\Bounce\ImapSource;
 use Pushword\Newsletter\Bounce\MaildirSource;
 use Pushword\Newsletter\Enum\ContactStatus;
+use Pushword\Newsletter\Repository\ContactEventRepository;
 use Pushword\Newsletter\Repository\ContactRepository;
 use Pushword\Newsletter\Service\BounceCollector;
 use Pushword\Newsletter\Service\BounceSignature;
@@ -44,6 +45,12 @@ final class RemoteMailboxTest extends AbstractNewsletterTestCase
         $this->entityManager->refresh($alive);
         self::assertSame(ContactStatus::Bounced, $dead->status);
         self::assertSame(ContactStatus::Subscribed, $alive->status);
+
+        // The ledger names the mailbox the refusal was read back from, so a drop
+        // made here is told apart from one an API client asked for.
+        $ledger = self::getContainer()->get(ContactEventRepository::class)->findFor($dead);
+        self::assertCount(1, $ledger, 'the fixture subscribes on the entity, so the refusal is the only act recorded');
+        self::assertSame('mailbox', $ledger[0]->source);
 
         // Everything read is flagged, the two that were not bounces included, or
         // every run would read them again for ever.

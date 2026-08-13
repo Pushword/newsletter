@@ -80,6 +80,26 @@ final class NewsletterAdminTest extends AbstractAdminTestClass
         }
     }
 
+    /**
+     * The switch that sends without a way off the list exists at three levels,
+     * and it is worth nothing on a form nobody can reach it from.
+     */
+    public function testTheTransactionalSwitchIsOnAllThreeForms(): void
+    {
+        $client = $this->loginUser();
+        $this->seed();
+
+        foreach (['audience', 'campaign', 'automation'] as $section) {
+            $client->request(Request::METHOD_GET, '/admin/newsletter/'.$section.'/new');
+
+            self::assertMatchesRegularExpression(
+                '/name="[^"]*\[transactional\]"/',
+                (string) $client->getResponse()->getContent(),
+                $section.' form',
+            );
+        }
+    }
+
     public function testTheCampaignFormOffersItsAudienceAndSegment(): void
     {
         $client = $this->loginUser();
@@ -605,6 +625,42 @@ final class NewsletterAdminTest extends AbstractAdminTestClass
         self::assertInstanceOf(Contact::class, $contact);
         self::assertTrue($contact->isSubscribed());
         self::assertStringStartsWith('admin:', (string) $contact->source);
+    }
+
+    /**
+     * The consent history, on the screen an opt-in is defended from. Both acts
+     * name the editor who performed them, and neither carries the editor's own
+     * IP — it would read as the contact's.
+     */
+    public function testTheConsentHistoryIsShownOnTheContactPage(): void
+    {
+        $client = $this->loginUser();
+        $audience = $this->seed();
+
+        $crawler = $client->request(Request::METHOD_GET, '/admin/newsletter/contact/opt-in');
+        $form = $crawler->filter('form[method=post]')->form();
+        $form['audience'] = (string) $audience->id;
+        $form['email'] = 'ledger@example.tld';
+        $client->submit($form, ['alreadyConsented' => '1']);
+
+        $contact = $this->entityManager()->getRepository(Contact::class)
+            ->findOneBy(['audience' => $audience, 'email' => 'ledger@example.tld']);
+        self::assertInstanceOf(Contact::class, $contact);
+
+        $client->request(Request::METHOD_GET, '/admin/newsletter/contact/'.$contact->id.'/unsubscribe');
+
+        $crawler = $client->request(Request::METHOD_GET, '/admin/newsletter/contact/'.$contact->id);
+        $panel = $crawler->filter('.form-fieldset')->reduce(
+            static fn (Crawler $node): bool => str_contains($node->text(), 'Consent history'),
+        );
+
+        self::assertSame(200, $client->getResponse()->getStatusCode());
+        self::assertCount(1, $panel);
+        self::assertCount(2, $panel->filter('tbody tr'));
+        self::assertStringContainsString('Opted in', $panel->text());
+        self::assertStringContainsString('Unsubscribed', $panel->text());
+        self::assertSame(2, substr_count($panel->text(), 'admin:'));
+        self::assertStringNotContainsString('127.0.0.1', $panel->text());
     }
 
     /** The same address on a second list is a second subscription, not the first one moved. */
