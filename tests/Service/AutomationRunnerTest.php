@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Pushword\Newsletter\Tests\Service;
 
 use DateTimeImmutable;
@@ -73,11 +75,11 @@ final class AutomationRunnerTest extends AbstractNewsletterTestCase
     public function testTriggerWhenNarrowsTheEnrollment(): void
     {
         $audience = $this->createAudience();
-        $this->createContact($audience, 'trek@example.tld', ['AmTrek']);
+        $this->createContact($audience, 'trek@example.tld', ['Hiking']);
         $this->createContact($audience, 'other@example.tld');
 
         $automation = $this->createAutomation($audience, self::TWO_STEPS, [
-            ['field' => 'tag', 'op' => 'has', 'value' => 'AmTrek'],
+            ['field' => 'tag', 'op' => 'has', 'value' => 'Hiking'],
         ]);
 
         self::assertSame(1, $this->enroll($automation));

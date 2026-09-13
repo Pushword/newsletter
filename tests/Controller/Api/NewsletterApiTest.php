@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Pushword\Newsletter\Tests\Controller\Api;
 
 use DateTimeImmutable;
@@ -71,7 +73,7 @@ final class NewsletterApiTest extends AbstractNewsletterTestCase
             'name' => 'Bootstrapped',
             'mainHost' => 'localhost.dev',
             'fromEmail' => 'News@Localhost.dev',
-            'interests' => ['AmTrek'],
+            'interests' => ['Hiking'],
             'rateSeconds' => 60,
         ]);
 
@@ -79,7 +81,7 @@ final class NewsletterApiTest extends AbstractNewsletterTestCase
         $this->trackAudience($this->id($body));
         self::assertTrue($body['requireDoubleOptIn'], 'consent is asked for unless the caller says otherwise');
         self::assertSame('news@localhost.dev', $body['fromEmail']);
-        self::assertSame(['AmTrek'], $body['interests']);
+        self::assertSame(['Hiking'], $body['interests']);
         self::assertSame(60, $body['rateSeconds']);
     }
 
@@ -87,7 +89,7 @@ final class NewsletterApiTest extends AbstractNewsletterTestCase
     {
         $body = $this->request(Request::METHOD_POST, '/api/newsletter/audience', [
             'slug' => 'api-'.bin2hex(random_bytes(6)),
-            'name' => 'Altimood',
+            'name' => 'Example Audience',
             'mainHost' => 'localhost.dev',
             'fromName' => 'Robin',
             'fromEmail' => 'news@localhost.dev',
@@ -96,7 +98,7 @@ final class NewsletterApiTest extends AbstractNewsletterTestCase
         ]);
 
         $this->trackAudience($this->id($body));
-        self::assertSame('Altimood', $body['name']);
+        self::assertSame('Example Audience', $body['name']);
         self::assertSame('Robin', $body['fromName']);
         self::assertSame('hello@localhost.dev', $body['replyTo']);
         self::assertFalse($body['requireDoubleOptIn'], 'an already-consenting base is imported without a second ask');
@@ -277,12 +279,12 @@ final class NewsletterApiTest extends AbstractNewsletterTestCase
 
         $body = $this->request(Request::METHOD_PATCH, '/api/newsletter/audience/'.$audience->slug, [
             'rateSeconds' => 5,
-            'interests' => ['AmTrek'],
+            'interests' => ['Hiking'],
             'utmSource' => 'Ma Newsletter',
         ]);
 
         self::assertSame(5, $body['rateSeconds']);
-        self::assertSame(['AmTrek'], $body['interests']);
+        self::assertSame(['Hiking'], $body['interests']);
         self::assertSame('ma-newsletter', $body['utmSource']);
     }
 
@@ -698,13 +700,13 @@ final class NewsletterApiTest extends AbstractNewsletterTestCase
     public function testPatchReplacesTags(): void
     {
         $audience = $this->createAudience();
-        $contact = $this->createContact($audience, 'tags@example.tld', ['AmTrek']);
+        $contact = $this->createContact($audience, 'tags@example.tld', ['Hiking']);
 
         $body = $this->request(Request::METHOD_PATCH, '/api/newsletter/contact/'.$contact->id, [
-            'tags' => ['AmClient'],
+            'tags' => ['Customer'],
         ]);
 
-        self::assertSame(['AmClient'], $body['tags']);
+        self::assertSame(['Customer'], $body['tags']);
     }
 
     public function testUnsubscribingThroughTheApi(): void
@@ -731,10 +733,10 @@ final class NewsletterApiTest extends AbstractNewsletterTestCase
     public function testListingBySegment(): void
     {
         $audience = $this->createAudience();
-        $this->createContact($audience, 'trek@example.tld', ['AmTrek']);
+        $this->createContact($audience, 'trek@example.tld', ['Hiking']);
         $this->createContact($audience, 'other@example.tld');
 
-        $segment = json_encode([['field' => 'tag', 'op' => 'has', 'value' => 'AmTrek']]);
+        $segment = json_encode([['field' => 'tag', 'op' => 'has', 'value' => 'Hiking']]);
         self::assertIsString($segment);
 
         $body = $this->request(
@@ -762,14 +764,14 @@ final class NewsletterApiTest extends AbstractNewsletterTestCase
     public function testCampaignCreationReportsHowManyItWouldReach(): void
     {
         $audience = $this->createAudience();
-        $this->createContact($audience, 'a@example.tld', ['AmTrek']);
+        $this->createContact($audience, 'a@example.tld', ['Hiking']);
         $this->createContact($audience, 'b@example.tld');
 
         $created = $this->request(Request::METHOD_POST, '/api/newsletter/campaign', [
             'audience' => $audience->slug,
             'subject' => 'Summer',
             'bodyMarkdown' => 'Hi **%name%**',
-            'segment' => [['field' => 'tag', 'op' => 'has', 'value' => 'AmTrek']],
+            'segment' => [['field' => 'tag', 'op' => 'has', 'value' => 'Hiking']],
         ]);
 
         self::assertSame(Response::HTTP_CREATED, $this->client->getResponse()->getStatusCode());
@@ -1025,10 +1027,10 @@ final class NewsletterApiTest extends AbstractNewsletterTestCase
     public function testAnAutomationReportsItsProgress(): void
     {
         $audience = $this->createAudience();
-        $this->createContact($audience, 'reader@example.tld', ['AmTrek']);
+        $this->createContact($audience, 'reader@example.tld', ['Hiking']);
         $this->createContact($audience, 'other@example.tld');
         $automation = $this->createAutomation($audience, [['delay' => 0, 'subject' => 'Welcome']], [
-            ['field' => 'tag', 'op' => 'has', 'value' => 'AmTrek'],
+            ['field' => 'tag', 'op' => 'has', 'value' => 'Hiking'],
         ]);
 
         $body = $this->request(Request::METHOD_GET, '/api/newsletter/automation/'.$automation->id);

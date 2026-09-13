@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Pushword\Newsletter\Tests\Controller;
 
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -214,14 +216,14 @@ final class SubscribeFlowTest extends AbstractNewsletterTestCase
 
     public function testOnlyDeclaredInterestsAreAttached(): void
     {
-        $audience = $this->createAudience(interests: ['AmTrek', 'AmBivouac']);
+        $audience = $this->createAudience(interests: ['Hiking', 'Camping']);
 
         $this->post($audience->slug, [
             'email' => 'tagged@example.tld',
-            'interests' => ['AmTrek', 'NotDeclared'],
+            'interests' => ['Hiking', 'NotDeclared'],
         ]);
 
-        self::assertSame(['AmTrek'], $this->find('tagged@example.tld')->getTagList());
+        self::assertSame(['Hiking'], $this->find('tagged@example.tld')->getTagList());
     }
 
     public function testOneSubmissionCanOpenSeveralSubscriptions(): void

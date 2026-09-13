@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Pushword\Newsletter\Tests\Controller;
 
 use PHPUnit\Framework\Attributes\Group;
@@ -120,11 +122,11 @@ final class FormEndpointTest extends AbstractNewsletterTestCase
 
     public function testOnlyDeclaredInterestsBecomeHiddenFields(): void
     {
-        $audience = $this->createAudience(interests: ['AmTrek']);
+        $audience = $this->createAudience(interests: ['Hiking']);
 
-        $html = $this->fetch(['audiences' => $audience->slug, 'interests' => 'AmTrek,Undeclared']);
+        $html = $this->fetch(['audiences' => $audience->slug, 'interests' => 'Hiking,Undeclared']);
 
-        self::assertStringContainsString('name="interests[]" value="AmTrek"', $html);
+        self::assertStringContainsString('name="interests[]" value="Hiking"', $html);
         self::assertStringNotContainsString('Undeclared', $html);
     }
 
