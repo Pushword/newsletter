@@ -32,6 +32,10 @@ class Audience implements IdInterface, Stringable
     use IdTrait;
     use TimestampableTrait;
 
+    public const string DEFAULT_EMAIL_HEADER = '**%siteName%**';
+
+    public const string DEFAULT_EMAIL_FOOTER = '© %year% %siteName%';
+
     #[Assert\NotBlank]
     #[Assert\Regex(pattern: '/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/', message: 'newsletter.audience.slug.invalid')]
     #[ORM\Column(type: Types::STRING, length: 100)]
@@ -105,24 +109,28 @@ class Audience implements IdInterface, Stringable
     public string $emailLayout {
         get {
             if (null !== $this->emailTemplate) {
-                return 'twig:'.$this->emailTemplate;
+                return str_starts_with($this->emailTemplate, 'saved:') ? $this->emailTemplate : 'twig:'.$this->emailTemplate;
             }
 
             return $this->emailWrapped ? 'framed' : 'simple';
         }
         set(string $value) {
             $this->emailWrapped = 'framed' === $value;
-            $this->emailTemplate = str_starts_with($value, 'twig:') ? substr($value, 5) : null;
+            $this->emailTemplate = match (true) {
+                str_starts_with($value, 'twig:') => substr($value, 5),
+                str_starts_with($value, 'saved:') => $value,
+                default => null,
+            };
         }
     }
 
     #[ORM\Column(type: Types::TEXT, options: ['default' => ''])]
-    public string $headerMarkdown = '' {
+    public string $headerMarkdown = self::DEFAULT_EMAIL_HEADER {
         set(?string $value) => (string) $value;
     }
 
     #[ORM\Column(type: Types::TEXT, options: ['default' => ''])]
-    public string $footerMarkdown = '' {
+    public string $footerMarkdown = self::DEFAULT_EMAIL_FOOTER {
         set(?string $value) => (string) $value;
     }
 

@@ -11,6 +11,7 @@ use Pushword\Core\Service\Markdown\MarkdownParser;
 use Pushword\Core\Site\SiteRegistry;
 use Pushword\Newsletter\Delivery\SendContext;
 use Pushword\Newsletter\Entity\Audience;
+use Pushword\Newsletter\Entity\EmailTemplate;
 use Pushword\Newsletter\Service\MailRenderer;
 use Pushword\Newsletter\Tests\AbstractNewsletterTestCase;
 use Pushword\Newsletter\Trigger\PlaceholderRenderer;
@@ -21,6 +22,30 @@ use Symfony\Component\DomCrawler\Crawler;
 final class MailRendererTest extends AbstractNewsletterTestCase
 {
     private const string UNSUBSCRIBE = 'https://localhost.dev/newsletter/unsubscribe/abcdef';
+
+    public function testDefaultIdentityResolvesSiteNameAndYearInBothPartsAndCanBeCleared(): void
+    {
+        $audience = $this->createAudience();
+        $contact = $this->createContact($audience, 'reader@example.tld');
+        $renderer = self::getContainer()->get(MailRenderer::class);
+        $siteName = self::getContainer()->get(SiteRegistry::class)->get($audience->mainHost)->name;
+        $copyright = '© '.new DateTimeImmutable()->format('Y').' '.$siteName;
+        self::assertSame(Audience::DEFAULT_EMAIL_HEADER, $audience->headerMarkdown);
+        self::assertSame(Audience::DEFAULT_EMAIL_FOOTER, $audience->footerMarkdown);
+
+        $html = $renderer->html($audience, $contact, 'Subject', 'Body', null, self::UNSUBSCRIBE, null);
+        self::assertStringContainsString($siteName, new Crawler($html)->filter('td')->first()->text());
+        self::assertStringContainsString($copyright, new Crawler($html)->filter('td')->last()->text());
+        $text = $renderer->text($audience, $contact, 'Body', self::UNSUBSCRIBE, SendContext::fromAudience($audience));
+        self::assertStringContainsString($copyright, $text);
+        self::assertStringNotContainsString('%siteName%', $html.$text);
+        self::assertStringNotContainsString('%year%', $html.$text);
+
+        $audience->headerMarkdown = '';
+        $audience->footerMarkdown = '';
+        self::assertSame('Body', $renderer->text($audience, $contact, 'Body', null));
+        self::assertStringNotContainsString($copyright, $renderer->html($audience, $contact, 'Subject', 'Body', null, null, null));
+    }
 
     /** @return iterable<string, array{bool}> */
     public static function layouts(): iterable
@@ -67,13 +92,75 @@ final class MailRendererTest extends AbstractNewsletterTestCase
         self::assertStringNotContainsString('Audience signature', $renderer->text($audience, $contact, 'Body', null, $context));
     }
 
-    public function testATwigPresetControlsTheDesignWithoutLosingTheEditableLayout(): void
+    public function testASavedDesignResolvesBothPartsAndPreservesExplicitOccurrenceFooters(): void
+    {
+        $audience = $this->createAudience();
+        $audience->headerMarkdown = 'Unused audience header';
+
+        $contact = $this->createContact($audience, 'reader@example.tld');
+        $template = new EmailTemplate();
+        $template->name = 'render-template-'.bin2hex(random_bytes(6));
+        $template->headerMarkdown = '## Saved %siteName%';
+        $template->footerMarkdown = 'Saved copyright %year%';
+
+        $this->entityManager->persist($template);
+        $this->entityManager->flush();
+
+        try {
+            $audience->emailLayout = 'saved:'.$template->id;
+            $renderer = self::getContainer()->get(MailRenderer::class);
+            $context = SendContext::fromAudience($audience);
+            self::assertNull($context->footerMarkdown);
+            self::assertSame($context->toArray(), SendContext::fromArray($context->toArray())->toArray());
+            $html = $renderer->html($audience, $contact, 'Subject', 'Body', null, self::UNSUBSCRIBE, null, sendContext: $context);
+            $text = $renderer->text($audience, $contact, 'Body', self::UNSUBSCRIBE, $context);
+            self::assertStringContainsString('Saved Pushword', $html.$text);
+            self::assertStringContainsString('Saved copyright '.new DateTimeImmutable()->format('Y'), $html);
+            self::assertStringContainsString('Saved copyright '.new DateTimeImmutable()->format('Y'), $text);
+            self::assertStringNotContainsString('Unused audience header', $html.$text);
+
+            foreach (['Occurrence signature', ''] as $footer) {
+                $override = new SendContext('localhost.dev', 'mail@example.tld', 'Brand', footerMarkdown: $footer);
+                $html = $renderer->html($audience, $contact, 'Subject', 'Body', null, null, null, sendContext: $override);
+                $text = $renderer->text($audience, $contact, 'Body', null, $override);
+                self::assertStringNotContainsString('Saved copyright', $html.$text);
+                if ('' !== $footer) {
+                    self::assertStringContainsString($footer, $html);
+                    self::assertStringContainsString($footer, $text);
+                }
+            }
+
+            $template->wrapped = false;
+            $template->headerMarkdown = '';
+            $template->footerMarkdown = '';
+            $html = $renderer->html($audience, $contact, 'Subject', 'Body', null, null, null);
+            self::assertCount(1, new Crawler($html)->filter('table[role="presentation"]'));
+            self::assertSame('Body', $renderer->text($audience, $contact, 'Body', null));
+            $audience->emailLayout = 'simple';
+            self::assertNull($audience->emailTemplate);
+            self::assertStringContainsString('Unused audience header', $renderer->html($audience, $contact, 'Subject', 'Body', null, null, null));
+        } finally {
+            $this->entityManager->remove($template);
+            $this->entityManager->flush();
+        }
+    }
+
+    /** @return iterable<string, array{string, int}> */
+    public static function twigPresets(): iterable
+    {
+        yield 'classic' => ['pushword', 2];
+        yield 'letter' => ['pushword_letter', 1];
+        yield 'bulletin' => ['pushword_bulletin', 3];
+    }
+
+    #[DataProvider('twigPresets')]
+    public function testATwigPresetControlsTheDesignWithoutLosingTheEditableLayout(string $preset, int $tables): void
     {
         $audience = $this->createAudience();
         $audience->headerMarkdown = 'Editable brand';
         $audience->footerMarkdown = 'Editable signature';
         $audience->postalAddress = '12 Baker Street';
-        $audience->emailLayout = 'twig:pushword';
+        $audience->emailLayout = 'twig:'.$preset;
 
         $contact = $this->createContact($audience, 'reader@example.tld');
         $renderer = self::getContainer()->get(MailRenderer::class);
@@ -81,10 +168,11 @@ final class MailRendererTest extends AbstractNewsletterTestCase
         $html = $renderer->html($audience, $contact, 'Subject', 'Hello **%name%**.', null, self::UNSUBSCRIBE, null, sendContext: $context);
         $crawler = new Crawler($html);
 
-        self::assertCount(2, $crawler->filter('table[role="presentation"]'));
+        self::assertCount($tables, $crawler->filter('table[role="presentation"]'));
         self::assertStringContainsString('Pushword', $crawler->filter('td')->first()->text());
         self::assertStringContainsString('Hello Test.', $crawler->filter('body')->text());
         self::assertStringContainsString($audience->name, $crawler->filter('td')->last()->text());
+        self::assertStringContainsString('© '.new DateTimeImmutable()->format('Y').' Pushword', $crawler->filter('td')->last()->text());
         self::assertStringContainsString('12 Baker Street', $html);
         self::assertCount(1, $crawler->filter('a[href="'.self::UNSUBSCRIBE.'"]'));
         self::assertStringNotContainsString('Editable', $html);
@@ -108,6 +196,7 @@ final class MailRendererTest extends AbstractNewsletterTestCase
     public function testEmailAddressesInBodyAndFooterNeedNoJavaScriptAndSensitiveLinksStayDirect(): void
     {
         $audience = $this->createAudience();
+        $audience->headerMarkdown = '';
         $audience->utmSource = 'newsletter';
         $audience->clickTracking = true;
 
@@ -171,6 +260,8 @@ final class MailRendererTest extends AbstractNewsletterTestCase
     public function testAnOptionalImagePlaceholderRendersBeforeTheGreetingWithoutWebMediaMarkup(string $image): void
     {
         $audience = $this->createAudience();
+        $audience->headerMarkdown = '';
+
         $contact = $this->createContact($audience, 'reader@example.tld');
         $context = new SendContext('admin-block-editor.test', 'newsletter@example.test', 'Brand', footerMarkdown: $image);
         $body = self::getContainer()->get(PlaceholderRenderer::class)
@@ -261,6 +352,9 @@ final class MailRendererTest extends AbstractNewsletterTestCase
     public function testAMailWithNoFootAtAllDrawsNoSeparator(): void
     {
         $audience = $this->createAudience();
+        $audience->headerMarkdown = '';
+        $audience->footerMarkdown = '';
+
         $contact = $this->createContact($audience, 'reader@example.tld');
         $renderer = self::getContainer()->get(MailRenderer::class);
 

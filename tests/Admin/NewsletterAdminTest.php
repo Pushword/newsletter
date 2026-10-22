@@ -6,6 +6,7 @@ namespace Pushword\Newsletter\Tests\Admin;
 
 use DateTimeImmutable;
 use Doctrine\ORM\EntityManagerInterface;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Group;
 use Pushword\Admin\Tests\AbstractAdminTestClass;
 use Pushword\Core\Entity\Page;
@@ -22,6 +23,7 @@ use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 use Symfony\Component\DomCrawler\Crawler;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
+use Symfony\Component\Mime\Email;
 
 #[Group('integration')]
 final class NewsletterAdminTest extends AbstractAdminTestClass
@@ -79,15 +81,73 @@ final class NewsletterAdminTest extends AbstractAdminTestClass
         $client = $this->loginUser();
         $this->seed();
 
-        foreach (['audience', 'contact', 'campaign', 'campaign-recipient', 'automation', 'automation-delivery'] as $section) {
+        foreach (['audience', 'contact', 'campaign', 'template', 'campaign-recipient', 'automation', 'automation-delivery'] as $section) {
             $crawler = $client->request(Request::METHOD_GET, '/admin/newsletter/'.$section);
             self::assertSame(200, $client->getResponse()->getStatusCode(), $section.' index');
-            self::assertCount(5, $crawler->filter('.pw-newsletter-nav a'));
+            self::assertCount(7, $crawler->filter('.pw-newsletter-nav a'));
+            $viewport = $crawler->filter('meta[name="viewport"]')->attr('content') ?? '';
+            self::assertStringNotContainsString('user-scalable=no', $viewport);
+            self::assertStringNotContainsString('maximum-scale=1', $viewport);
             $activeSection = 'campaign-recipient' === $section ? 'campaign' : $section;
             self::assertStringEndsWith(
                 '/admin/newsletter/'.$activeSection,
                 $crawler->filter('.pw-newsletter-nav a[aria-current="page"]')->attr('href') ?? '',
             );
+        }
+    }
+
+    public function testStatisticsFiltersHaveMatchingLabels(): void
+    {
+        $client = $this->loginUser();
+        $crawler = $client->request(Request::METHOD_GET, '/admin/newsletter/statistics');
+        self::assertResponseIsSuccessful();
+        foreach (['from', 'to', 'audience'] as $field) {
+            $id = 'statistics-'.$field;
+            self::assertCount(1, $crawler->filter('#'.$id));
+            self::assertCount(1, $crawler->filter('label[for="'.$id.'"]'));
+        }
+    }
+
+    public function testContactIdentityIsCompactAndKeepsPhoneOnlyContactsVisible(): void
+    {
+        $client = $this->loginUser();
+        $audience = $this->seed();
+        $phone = $this->phoneContact($audience);
+        $crawler = $client->request(Request::METHOD_GET, '/admin/newsletter/contact');
+        self::assertResponseIsSuccessful();
+        $identities = $crawler->filter('.pw-newsletter-contact-identity');
+        self::assertStringContainsString('admin-contact@example.tld', implode(' ', $identities->each(static fn (Crawler $identity): string => $identity->text())));
+        self::assertStringContainsString('0612345678', $crawler->filter('article')->text());
+        self::assertCount(0, $crawler->filter('td[data-column="phone"], td[data-column="tags"], td[data-column="locale"]'));
+
+        $crawler = $client->request(Request::METHOD_GET, '/admin/newsletter/contact/'.$phone->id);
+        self::assertResponseIsSuccessful();
+        self::assertStringContainsString('0612345678', $crawler->filter('h1')->text());
+        self::assertStringNotContainsString('Null', $crawler->filter('article')->text());
+        self::assertStringContainsString('Subscribed', $crawler->filter('article')->text());
+        $addressed = $this->entityManager()->getRepository(Contact::class)->findOneBy(['email' => 'admin-contact@example.tld', 'audience' => $audience->id]);
+        self::assertInstanceOf(Contact::class, $addressed);
+        $crawler = $client->request(Request::METHOD_GET, '/admin/newsletter/contact/'.$addressed->id);
+        self::assertSame('Subscribed', $crawler->filter('table tbody .badge')->first()->text());
+        self::assertCount(1, $crawler->filter('.pw-newsletter-contact-actions form[action$="/unsubscribe"] input[name="_token"]'));
+        self::assertCount(1, $crawler->filter('.page-actions > a.action-edit'));
+        self::assertCount(0, $crawler->filter('.page-actions > form[action$="/unsubscribe"]'));
+    }
+
+    public function testWritingFormsHaveTranslatedGuidanceAndOneCreationPath(): void
+    {
+        $client = $this->loginUser();
+        $this->seed();
+        foreach (['audience', 'campaign', 'template', 'automation'] as $section) {
+            $crawler = $client->request(Request::METHOD_GET, '/admin/newsletter/'.$section.'/new');
+            self::assertResponseIsSuccessful();
+            self::assertDoesNotMatchRegularExpression('/\bnewsletter\.[a-z][a-zA-Z.]+/', $crawler->filter('article')->text());
+            self::assertCount(0, $crawler->filter('button[value="saveAndAddAnother"]'));
+            if (\in_array($section, ['campaign', 'automation'], true)) {
+                $id = 'newsletter-'.$section.'-audience-label';
+                self::assertSame($id, $crawler->filter('select[name="'.ucfirst($section).'[audience]"]')->attr('aria-labelledby'));
+                self::assertCount(1, $crawler->filter('label#'.$id));
+            }
         }
     }
 
@@ -129,8 +189,8 @@ final class NewsletterAdminTest extends AbstractAdminTestClass
         $stored = $this->entityManager()->find(Audience::class, $audienceId);
         self::assertInstanceOf(Audience::class, $stored);
         self::assertFalse($stored->emailWrapped);
-        self::assertSame('', $stored->headerMarkdown);
-        self::assertSame('', $stored->footerMarkdown);
+        self::assertSame(Audience::DEFAULT_EMAIL_HEADER, $stored->headerMarkdown);
+        self::assertSame(Audience::DEFAULT_EMAIL_FOOTER, $stored->footerMarkdown);
 
         unset($values['preview']);
         $client->request(Request::METHOD_POST, $url, $values);
@@ -173,7 +233,16 @@ final class NewsletterAdminTest extends AbstractAdminTestClass
         self::assertResponseRedirects('/login');
     }
 
-    public function testATwigPresetCanBePreviewedAndSavedAndRejectsAnUnregisteredTemplate(): void
+    /** @return iterable<string, array{string}> */
+    public static function twigPresets(): iterable
+    {
+        yield 'classic' => ['pushword'];
+        yield 'letter' => ['pushword_letter'];
+        yield 'bulletin' => ['pushword_bulletin'];
+    }
+
+    #[DataProvider('twigPresets')]
+    public function testATwigPresetCanBePreviewedAndSavedAndRejectsAnUnregisteredTemplate(string $preset): void
     {
         $client = $this->loginUser();
         $audience = $this->seed();
@@ -181,7 +250,7 @@ final class NewsletterAdminTest extends AbstractAdminTestClass
         $url = '/admin/newsletter/audience/'.$id.'/email-design';
         $crawler = $client->request(Request::METHOD_GET, $url);
         $form = $crawler->filter('form[name="email_design"]')->form();
-        $form['email_design[emailLayout]'] = 'twig:pushword';
+        $form['email_design[emailLayout]'] = 'twig:'.$preset;
         $form['email_design[headerMarkdown]'] = 'Retained header';
         $form['email_design[sampleBody]'] = 'Live content';
         $values = $form->getPhpValues();
@@ -204,10 +273,10 @@ final class NewsletterAdminTest extends AbstractAdminTestClass
         $this->entityManager()->clear();
         $stored = $this->entityManager()->find(Audience::class, $id);
         self::assertInstanceOf(Audience::class, $stored);
-        self::assertSame('pushword', $stored->emailTemplate);
+        self::assertSame($preset, $stored->emailTemplate);
         self::assertSame('Retained header', $stored->headerMarkdown);
         $crawler = $client->request(Request::METHOD_GET, $url);
-        self::assertCount(1, $crawler->filter('input[value="twig:pushword"]:checked'));
+        self::assertCount(1, $crawler->filter('input[value="twig:'.$preset.'"]:checked'));
         self::assertCount(1, $crawler->filter('[data-email-editable][hidden]'));
 
         $form = $crawler->filter('form[name="email_design"]')->form();
@@ -221,7 +290,7 @@ final class NewsletterAdminTest extends AbstractAdminTestClass
         $this->entityManager()->clear();
         $stored = $this->entityManager()->find(Audience::class, $id);
         self::assertInstanceOf(Audience::class, $stored);
-        self::assertSame('pushword', $stored->emailTemplate);
+        self::assertSame($preset, $stored->emailTemplate);
 
         $crawler = $client->request(Request::METHOD_GET, $url);
         $form = $crawler->filter('form[name="email_design"]')->form();
@@ -256,7 +325,7 @@ final class NewsletterAdminTest extends AbstractAdminTestClass
         $this->entityManager()->clear();
         $stored = $this->entityManager()->find(Audience::class, $audience->id);
         self::assertInstanceOf(Audience::class, $stored);
-        self::assertSame('', $stored->headerMarkdown);
+        self::assertSame(Audience::DEFAULT_EMAIL_HEADER, $stored->headerMarkdown);
     }
 
     public function testAutomationRowsShowTheirStatusAndActualStepCount(): void
@@ -364,8 +433,8 @@ final class NewsletterAdminTest extends AbstractAdminTestClass
         $values['Automation']['name'] = 'Editable sequence';
         $values['Automation']['audience'] = (string) $audience->id;
         $values['Automation']['steps'] = [
-            ['position' => 0, 'delayMinutes' => 0, 'subject' => 'Welcome', 'bodyMarkdown' => 'Hello!'],
-            ['position' => 1, 'delayMinutes' => 1440, 'subject' => 'One day later', 'bodyMarkdown' => 'Some news.'],
+            ['sequenceNumber' => 1, 'delayMinutes' => 0, 'subject' => 'Welcome', 'bodyMarkdown' => 'Hello!'],
+            ['sequenceNumber' => 2, 'delayMinutes' => 1440, 'subject' => 'One day later', 'bodyMarkdown' => 'Some news.'],
         ];
         $client->request(Request::METHOD_POST, '/admin/newsletter/automation/new', $values);
         self::assertResponseRedirects();
@@ -378,6 +447,10 @@ final class NewsletterAdminTest extends AbstractAdminTestClass
         $crawler = $client->request(Request::METHOD_GET, '/admin/newsletter/automation/'.$automation->id.'/edit');
         self::assertCount(2, $crawler->filter('.pw-newsletter-sequence .accordion-collapse.show'));
         self::assertSame('Welcome', $crawler->filter('input[name="Automation[steps][0][subject]"]')->attr('value'));
+        self::assertCount(1, $crawler->filter('[data-preview-step="0"]'));
+        self::assertCount(1, $crawler->filter('[data-preview-step="1"]'));
+        self::assertCount(1, $crawler->filter('#Automation_steps_0_bodyMarkdown-preview'));
+        self::assertCount(1, $crawler->filter('#Automation_steps_1_bodyMarkdown-preview'));
     }
 
     public function testTheCampaignIndexShowsItsAudience(): void
@@ -455,6 +528,78 @@ final class NewsletterAdminTest extends AbstractAdminTestClass
         self::assertMatchesRegularExpression('/name="[^"]*\[segmentAsJson\]"/', $html);
         self::assertMatchesRegularExpression('/name="[^"]*\[audience\]"/', $html);
         self::assertMatchesRegularExpression('/name="[^"]*\[translationsAsJson\]"/', $html);
+    }
+
+    public function testACampaignChoosesItsOwnDesignAndCanReturnToTheAudienceDefault(): void
+    {
+        $client = $this->loginUser();
+        $audience = $this->seed();
+        $crawler = $client->request(Request::METHOD_GET, '/admin/newsletter/campaign/new');
+        self::assertStringContainsString('Choose the audience and design', $crawler->filter('.form-fieldset')->first()->text());
+        foreach (['pushword', 'pushword_letter', 'pushword_bulletin'] as $preset) {
+            self::assertCount(1, $crawler->filter('select[name="Campaign[emailLayout]"] option[value="twig:'.$preset.'"]'));
+        }
+
+        $form = $crawler->filter('form[name="Campaign"]')->form();
+        $form['Campaign[subject]'] = 'Own email design';
+        $form['Campaign[audience]'] = (string) $audience->id;
+        $form['Campaign[emailLayout]'] = 'twig:pushword_letter';
+        $client->submit($form);
+        self::assertResponseRedirects();
+        $campaign = $this->entityManager()->getRepository(Campaign::class)->findOneBy(['subject' => 'Own email design']);
+        self::assertInstanceOf(Campaign::class, $campaign);
+        $id = $campaign->id;
+        self::assertSame('twig:pushword_letter', $campaign->emailLayout);
+        $storedAudience = $this->entityManager()->find(Audience::class, $audience->id);
+        self::assertInstanceOf(Audience::class, $storedAudience);
+        self::assertSame('simple', $storedAudience->emailLayout);
+
+        $url = '/admin/newsletter/campaign/'.$id.'/edit';
+        $crawler = $client->request(Request::METHOD_GET, $url);
+        self::assertCount(1, $crawler->filter('select[name="Campaign[emailLayout]"] option[value="twig:pushword_letter"][selected]'));
+        $form = $crawler->filter('form[name="Campaign"]')->form();
+        $values = $form->getPhpValues();
+        self::assertIsArray($values['Campaign']);
+        $values['Campaign']['emailLayout'] = 'twig:unregistered';
+        $client->request(Request::METHOD_POST, $url, $values);
+        self::assertResponseStatusCodeSame(Response::HTTP_UNPROCESSABLE_ENTITY);
+        $this->entityManager()->clear();
+        $stored = $this->entityManager()->find(Campaign::class, $id);
+        self::assertInstanceOf(Campaign::class, $stored);
+        self::assertSame('twig:pushword_letter', $stored->emailLayout);
+
+        $crawler = $client->request(Request::METHOD_GET, $url);
+        $form = $crawler->filter('form[name="Campaign"]')->form();
+        $form['Campaign[emailLayout]'] = '';
+        $client->submit($form);
+        self::assertResponseRedirects();
+        $this->entityManager()->clear();
+        $stored = $this->entityManager()->find(Campaign::class, $id);
+        self::assertInstanceOf(Campaign::class, $stored);
+        self::assertNull($stored->emailLayout);
+    }
+
+    public function testTheCampaignTestActionUsesTheSavedCampaignDesign(): void
+    {
+        $client = $this->loginUser();
+        $audience = $this->seed();
+        $audience->headerMarkdown = 'Audience-only heading';
+
+        $campaign = $this->campaign($audience, 'Preset test email');
+        $campaign->emailLayout = 'twig:pushword';
+        $this->entityManager()->flush();
+        $crawler = $client->request(Request::METHOD_GET, '/admin/newsletter/campaign/'.$campaign->id.'/send-test');
+        $form = $crawler->filter('form[method="post"]')->form();
+        $form['emails'] = 'test@example.tld';
+        $client->submit($form);
+        self::assertResponseRedirects();
+        self::assertEmailCount(1);
+        $message = self::getMailerMessage();
+        self::assertInstanceOf(Email::class, $message);
+        $html = $message->getHtmlBody();
+        self::assertIsString($html);
+        self::assertStringContainsString('Pushword', $html);
+        self::assertStringNotContainsString('Audience-only heading', $html);
     }
 
     /** The per-locale bodies edit the way the segment does: JSON, validated before it is stored. */
@@ -699,6 +844,19 @@ final class NewsletterAdminTest extends AbstractAdminTestClass
             $client->request($method, $url);
             self::assertSame(403, $client->getResponse()->getStatusCode(), $method.' '.$url);
         }
+    }
+
+    public function testARecipientDetailShowsTheWholeDeliveryError(): void
+    {
+        $client = $this->loginUser();
+        $campaign = $this->campaign($this->seed(), 'Failed delivery');
+        $error = str_repeat('Transport diagnostic. ', 10).'Complete error ends here.';
+        $recipient = $this->recipient($campaign, 'failed-detail@example.tld')->markFailed($error);
+        $this->entityManager()->flush();
+        $crawler = $client->request(Request::METHOD_GET, '/admin/newsletter/campaign-recipient');
+        $client->click($crawler->filter('tr[data-id="'.$recipient->id.'"] a.action-detail')->link());
+        self::assertResponseIsSuccessful();
+        self::assertStringContainsString($error, $client->getCrawler()->filter('article')->text());
     }
 
     /** Same guarantee for the page grammar, which the source picks: a bad rule is a form error, never a 500. */

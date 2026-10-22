@@ -4,12 +4,13 @@ newsletter:
       plural: Audiences
       singular: Audience
     fieldset:
+      advanced: Envoi et statistiques
       identity: Identité
       rules: Règles
       sender: Expéditeur
     field:
       clickTracking: Suivi des clics
-      clickTracking.help: Réécrit les liens des mails via une redirection qui enregistre qui a cliqué quoi — mais seulement pour les contacts portant leur propre consentement daté. Désactivé, les mails gardent leurs liens tels quels (balises UTM comprises).
+      clickTracking.help: Enregistre les clics des contacts ayant accepté ce suivi. Les autres liens restent inchangés.
       doubleOptIn: Double opt-in
       doubleOptIn.help: Demander une confirmation avant qu'un contact devienne joignable. À laisser activé sauf import d'une base ayant déjà consenti.
       fromEmail: Adresse d'expédition
@@ -17,19 +18,21 @@ newsletter:
       interests: Centres d'intérêt
       interests.help: Les seules valeurs que le formulaire public peut attacher. Toute autre valeur soumise est ignorée.
       mainHost: Hôte
-      mainHost.help: Les liens de confirmation et de désinscription sont construits depuis l'URL live de cet hôte, pour fonctionner sur un site généré en statique.
+      mainHost.help: Site utilisé pour les liens de confirmation et de désinscription.
       name: Nom
       postalAddress: Adresse postale
-      postalAddress.help: L'adresse physique de l'expéditeur, imprimée au pied de chaque mail de cette audience. La loi américaine (CAN-SPAM) l'exige sur les mails commerciaux ; laissez vide pour une audience purement transactionnelle.
+      postalAddress.help: Adresse de l'expéditeur affichée au pied de chaque email.
       rateSeconds: Cadence (s/mail)
+      rateSeconds.help: Secondes entre deux emails. Par exemple, 30 limite l'envoi à deux emails par minute.
       replyTo: Répondre à
       slug: Référence (slug)
       slug.help: La clé utilisée par le formulaire d'inscription et l'API.
       transactional: Mail transactionnel
-      transactional.help: Envoie tous les mails de cette audience sans lien de désinscription ni en-tête List-Unsubscribe. Réservé aux messages de service — confirmation de commande, rappel de rendez-vous. Sur une newsletter c'est illégal (RGPD, CAN-SPAM), et les messageries considèrent comme non attribué un envoi de masse sans cet en-tête.
+      transactional.help: Messages de service uniquement. Retire les liens de désinscription de tous les emails de cette audience.
       utmSource: Source analytics
-      utmSource.help: Renseignez-la (par exemple newsletter) pour ajouter utm_source, utm_medium et utm_campaign aux liens des mails de cette audience. Vide, les liens partent tels quels. Seuls les liens vers vos propres sites sont marqués.
+      utmSource.help: Ajoute les paramètres de suivi aux liens vers vos sites. Laissez vide pour conserver les liens inchangés.
   automation:
+    contactRecipients: Cette séquence est envoyée au contact qui la déclenche. Les conditions du déclencheur déterminent quels contacts y entrent.
     label:
       plural: Automatisations
       singular: Automatisation
@@ -82,18 +85,30 @@ newsletter:
       previewSegment: Compter l'audience
       recipients: Destinataires
       review: Vérifier et envoyer
+      saveDraft: Enregistrer le brouillon
       schedule: Programmer
       send: Envoyer
       sendTest: Envoyer un test
+    design:
+      current: 'Habillage utilisé : %theme%'
+      custom: Ce modèle définit l'en-tête, le pied de page et le cadre.
+      customize: Personnaliser l’en-tête et le pied de page
+      edit: Modifier l’habillage de l’audience (nouvel onglet)
+      empty: Choisissez une audience pour voir l'habillage utilisé.
+      inherit: Utiliser l'habillage de l'audience
+      label: Habillage de cette campagne
+      shared: 'En-tête et pied de page de « %audience% ».'
+      warning: Modifier l'habillage de l'audience affecte aussi les campagnes et automatisations qui l'utilisent.
+    editor: Rédiger la newsletter
     fieldset:
       advanced: Options avancées
-      audience: 2. Choisir les destinataires
-      audienceHelp: Choisissez une audience. Ajoutez des conditions pour envoyer à une partie de ses abonnés.
-      content: 1. Rédiger la newsletter
-      contentHelp: L'objet et le texte d'aperçu donnent envie d'ouvrir votre email.
+      audience: 3. Affiner les destinataires
+      audienceHelp: Sans condition, tous les abonnés de l'audience choisie reçoivent cette newsletter.
+      content: 2. Rédiger la newsletter
+      design: 1. Choisir l'audience et l'habillage
       languages: Traductions
       performance: Résultats de l'envoi
-      schedule: 3. Préparer l'envoi
+      schedule: 4. Préparer l'envoi
       scheduleHelp: Enregistrez votre brouillon, envoyez un test, puis envoyez ou programmez depuis la fiche de la newsletter.
     field:
       audience: Audience
@@ -163,18 +178,19 @@ newsletter:
     action:
       confirm: Confirmer à la main
       merge: Fusionner les deux
+      more: Autres actions
       optIn: Inscrire un contact
       optInAnother: Ajouter à une autre liste
       resubscribe: Réinscrire
       unsubscribe: Désinscrire
     events:
-      empty: Rien d'enregistré. Cette inscription est antérieure au journal, ou a été écrite directement en base.
+      empty: Aucun événement enregistré pour cette inscription.
       field:
         host: Hôte
         ip: IP
         occurredAt: Quand
         transition: Quoi
-      help: Ce qui est réellement arrivé à cette inscription, du plus ancien au plus récent. Rien n'y est jamais modifié ni supprimé. Les dates de Consentement disent où en sont les choses ; ceci dit comment on y est arrivé, et c'est avec ça qu'une inscription se défend.
+      help: Les inscriptions, confirmations et désinscriptions de ce contact, du plus ancien au plus récent.
       title: Journal de consentement
       transition:
         bounce: Rejeté
@@ -232,8 +248,13 @@ newsletter:
       help: Une liste à la fois, comme le formulaire public. Une adresse déjà présente sur une autre liste reçoit une seconde inscription, avec son propre consentement.
       identifier.help: L'un ou l'autre suffit. Un contact avec un numéro et sans adresse ne reçoit aucun mail — rien à confirmer, il est inscrit directement.
       title: Inscrire un contact
+    status:
+      bounced: Rejeté
+      pending: À confirmer
+      subscribed: Inscrit
+      unsubscribed: Désinscrit
     subscriptions:
-      help: La même adresse sur toutes les listes de cette installation. Celle en cours d'édition est surlignée.
+      help: Tous les abonnements de cette adresse. L'abonnement actuel est mis en évidence.
       title: Inscriptions
   criteria:
     addCondition: Ajouter une condition
@@ -277,20 +298,26 @@ newsletter:
       subjectId: Sujet déclencheur
   design:
     action: Habillage
-    description: 'Définissez la présentation commune aux newsletters et automatisations de « %audience% ».'
+    back: Retour à l'audience
+    canvas: Aperçu de l'email, défilement horizontal pour voir toute la largeur
+    defaults: Rétablir le nom du site et le copyright
+    description: Commun aux newsletters et automatisations envoyées à cette audience.
     desktop: Ordinateur
-    failed: Impossible d'actualiser l'aperçu. Réessayez ou rechargez la page.
+    failed: Impossible d'actualiser l'aperçu. Vos modifications et le dernier aperçu sont conservés.
     footer: Pied de page
-    footerHelp: Texte, signature ou liens en Markdown. La désinscription et l'adresse postale sont ajoutées automatiquement.
+    footerHelp: Signature ou liens en Markdown. La désinscription et l'adresse postale sont ajoutées automatiquement.
+    framedHelp: Contenu centré sur un fond clair, comme une newsletter classique.
     header: En-tête
-    headerHelp: Texte ou bannière en Markdown. Pour une image, utilisez une URL publique absolue.
+    headerHelp: Votre nom ou une bannière en Markdown. Les images nécessitent une URL publique absolue.
+    identity: Identité de l'expéditeur
     layout: Mise en page
-    layoutHelp: Le cadre centre le contenu sur un fond gris clair. Sans cadre, le message reste sobre. L'en-tête et le pied de page sont conservés dans les deux cas.
     mobile: Mobile
+    presetHelp: Un habillage réutilisable avec son en-tête, son pied de page et son cadre.
     preview: Aperçu en direct
-    previewHelp: Les modifications s'affichent avant enregistrement. Le rendu peut varier selon la messagerie.
+    previewHelp: Aucun email n'est envoyé depuis cet aperçu. Le rendu peut varier selon la messagerie.
     ready: Aperçu à jour
-    sample: Texte d'essai
+    retry: Réessayer
+    sample: Texte d'essai de l'aperçu
     sampleBody: |
       Bonjour **%name%**,
 
@@ -301,14 +328,20 @@ newsletter:
       Retrouvez nos nouveautés et nos conseils sur notre site.
 
       À bientôt !
-    sampleHelp: Sert uniquement à visualiser l'habillage. Ce texte n'est ni enregistré ni envoyé.
+    sampleHelp: Pour l'aperçu uniquement. Ce contenu n'est ni enregistré ni envoyé.
     save: Enregistrer l'habillage
     saved: Habillage enregistré.
+    savedState: Habillage enregistré
+    settings: Réglages de l'habillage
     simple: Sans cadre
-    templateHelp: L'en-tête, le pied de page et le cadre de ce modèle sont définis en Twig. Vos textes personnalisés sont conservés pour les autres mises en page.
+    simpleHelp: Un email sobre avec votre en-tête, votre contenu et votre pied de page.
+    templateHelp: Ce modèle gère l'en-tête, le pied de page et le cadre. Vos textes personnalisés sont conservés pour les autres mises en page.
     title: Habillage des emails
+    tokens: 'Valeurs automatiques :'
+    unsaved: Modifications non enregistrées
     updating: Actualisation de l'aperçu…
-    viewport: Largeur de l'aperçu
+    view: Espace de travail de l'habillage
+    viewport: Largeur de l'aperçu en pixels
     wrapped: Avec cadre
   email:
     unsubscribe: Se désinscrire
@@ -333,16 +366,108 @@ newsletter:
   resubscribed:
     body: Vous recevrez de nouveau les messages de %audience%.
     title: Réinscription effectuée
+  statistics:
+    aboutActivity: "À propos de ces événements"
+    aboutContacts: "À propos du décompte de la base"
+    activity: "Activité des abonnements"
+    activityConfirm: "Confirmations"
+    activityHelp: "Événements sur la période. Une confirmation peut suivre une demande : ces chiffres ne s’additionnent pas."
+    activityOptin: "Demandes d’inscription"
+    activityResubscribe: "Réabonnements"
+    activitySummary: "Événements enregistrés pendant la période."
+    activityUnsubscribe: "Désinscriptions"
+    allAudiences: "Toutes les audiences"
+    apply: "Appliquer"
+    attention: "À surveiller"
+    audience: "Audience"
+    audienceSettings: "Paramètres de l’audience"
+    back: "Toutes les statistiques"
+    bounceRate: "Taux de rebond"
+    bounced: "Rebonds"
+    campaignMethodology: "Les taux utilisent les envois effectués comme base. Un contact compte une fois par campagne. Les clics couvrent uniquement les contacts consentants."
+    campaignPlural: "campagnes"
+    campaignSingular: "campagne"
+    campaigns: "Comparaison des campagnes"
+    clickRate: "Taux de clics observé"
+    clickers: "Cliqueurs uniques"
+    clicks: "Clics cumulés"
+    clicksHelp: "Les clics cumulés sont conservés. Les clics uniques et le détail par lien reposent sur les données encore présentes après retrait du consentement ou suppression d’un contact. Les robots ne sont pas filtrés."
+    contactBounced: "Abonnements en rebond"
+    contactMailable: "Abonnés avec une adresse email"
+    contactPending: "En attente de confirmation"
+    contactPlural: "contacts"
+    contactSingular: "contact"
+    contactSubscribed: "Tous les abonnés"
+    contactUnsubscribed: "Contacts désinscrits"
+    contacts: "État de la base aujourd’hui"
+    contactsHelp: "Abonnements actuels de l’audience sélectionnée, indépendamment de la période. Un contact dans deux listes compte deux fois."
+    contactsSummary: "Abonnements actuels de l’audience sélectionnée."
+    correctFilters: "Corrigez les filtres indiqués pour afficher les résultats."
+    date: "Premier envoi"
+    delivery: "Résultats de l’envoi"
+    editPeriod: "Modifier la période"
+    emptyHelp: "Choisissez une autre période ou audience. Les brouillons et campagnes planifiées apparaissent ici après leur premier envoi."
+    emptyTitle: "Aucune campagne envoyée sur cette période"
+    engagement: "Engagement"
+    export: "Exporter en CSV"
+    failed: "Échecs d’envoi"
+    feedback: "Retours des destinataires"
+    feedbackHelp: "Taux calculés sur les envois effectués. Les rebonds et désinscriptions peuvent arriver plus tard."
+    filters: "Filtres des statistiques"
+    from: "Du"
+    invalidAudience: "Choisissez une audience existante."
+    invalidDate: "Saisissez une date valide."
+    invalidRange: "La date de fin doit être égale ou postérieure à la date de début."
+    lastDays: "%days% derniers jours"
+    links: "Liens cliqués"
+    linksSummary: "Classés par cliqueurs uniques. Un lecteur compte une fois par destination."
+    manageCampaigns: "Gérer les campagnes"
+    methodology: "Les taux sont calculés sur les envois effectués. Les clics couvrent uniquement les contacts consentants, comptés une fois par campagne. Le taux global est pondéré par tous les envois, y compris ceux sans suivi."
+    noClicks: "Aucun clic conservé pour cette campagne à ce jour."
+    noClicksHelp: "Les résultats apparaissent lorsqu’un lecteur consentant clique sur un lien suivi."
+    noSends: "Aucun envoi"
+    noSignals: "Aucun retour signalé"
+    notAvailable: "Non mesuré"
+    opensNewTab: "S’ouvre dans un nouvel onglet"
+    overview: "Résultats cumulés des campagnes"
+    pending: "En attente d’envoi"
+    period: "Période du rapport"
+    periodSummary: "Campagnes dont le premier envoi se situe dans cette période (%timezone%). Résultats cumulés à ce jour."
+    readReport: "Comment lire ces chiffres"
+    recipients: "Destinataires ciblés"
+    requiredDate: "Saisissez une date."
+    reset: "Réinitialiser"
+    reviewCampaign: "Voir la campagne"
+    sendingHelp: "L’envoi est en cours. Les résultats évoluent à mesure que les messages restants sont traités."
+    sent: "Envois effectués"
+    sentHelp: "Un envoi effectué est une remise au transport mail, sans confirmation de réception en boîte. Les rebonds sont comptés séparément et peuvent arriver plus tard. Les états par destinataire concernent les lignes encore conservées."
+    skipped: "Envois ignorés"
+    status: "État"
+    subject: "Campagne"
+    title: "Statistiques"
+    to: "Au"
+    trackingDisabled: "Le suivi des clics est actuellement désactivé pour cette audience. Aucune donnée par lien conservée pour cette campagne."
+    trackingUnavailable: "Suivi indisponible"
+    unmeasured: "La réception en boîte, les ouvertures, les plaintes spam, les conversions et les revenus ne sont pas mesurés."
+    unsubscribeRate: "Taux de désinscription"
+    unsubscribed: "Désinscriptions"
+    url: "URL de destination"
   step:
     add: Ajouter un email
+    days: j
+    email: Email
     empty: Votre séquence est vide. Ajoutez le premier email.
     field:
       body: Contenu
       delay: Délai (minutes)
-      delay.help: Attendre ce délai après l'entrée dans la séquence pour la première étape, ou après l'étape précédente. Un contact y entre dès qu'il est inscrit — avec double opt-in, juste après sa confirmation. J+2 = 2880.
-      position: Position
-      position.help: Ordre dans la séquence, à partir de 0. À numéro égal, l'ordre d'ajout est conservé.
+      delay.help: Délai après l'inscription pour le premier email, ou après l'email précédent. 0 = envoi immédiat. Avec double opt-in, la séquence commence après confirmation.
+      position: Numéro de l'email
+      position.help: Ordre dans la séquence, à partir de 1. À numéro égal, l'ordre d'ajout est conservé.
       subject: Objet
+    hours: h
+    immediate: Envoi immédiat
+    minutes: min
+    preview: Prévisualiser cet email
   subscribe:
     done: Vous êtes inscrit. Merci !
     invalidEmail: Cette adresse email ne semble pas valide.
@@ -352,6 +477,30 @@ newsletter:
     sendFailed: L'envoi de l'e-mail de confirmation a échoué. Vérifiez votre adresse et réessayez.
     tooMany: Trop de tentatives. Réessayez plus tard.
     unknownAudience: Cette newsletter n'existe pas.
+  template:
+    back: Retour aux modèles
+    copyName: '%name% (copie)'
+    create: Créer un modèle
+    duplicate: Dupliquer
+    edit: Modifier ce modèle (nouvel onglet)
+    footerHelp: Signature en Markdown. Utilisez © %year% %siteName% pour le copyright. Le désabonnement et l'adresse postale sont ajoutés automatiquement.
+    headerHelp: En-tête en Markdown. Utilisez %siteName% pour le nom du site. Les images nécessitent une URL publique absolue.
+    help: Réutilisez cet en-tête, ce pied de page et ce cadre dans vos newsletters. Les modifications s'appliquent à toutes les audiences et campagnes utilisant ce modèle.
+    identity: Réglages du modèle
+    label:
+      plural: Modèles
+      singular: Modèle
+    layout: Mise en page
+    manage: Créer ou gérer les modèles (nouvel onglet)
+    name: Nom du modèle
+    notSaved: Nouveau modèle, pas encore enregistré
+    preview: Prévisualiser
+    sampleAudience: Votre newsletter
+    save: Enregistrer le modèle
+    savedGroup: Modèles enregistrés
+    siteGroup: Modèles du site
+    siteHelp: Modèles fournis par votre site, disponibles dans le choix d’habillage des campagnes. Leur apparence est définie dans le code du site.
+    wrapped: Ajouter un cadre autour du contenu
   unknown:
     body: Ce lien n'est plus valide.
     title: Lien inconnu
@@ -386,5 +535,11 @@ newsletter:
     contactDescription: Retrouvez vos abonnés, leurs coordonnées et leurs inscriptions aux différentes audiences.
     contactEmptyHint: Inscrivez un contact dans une audience pour commencer à construire votre liste d'abonnés.
     contactEmptyTitle: Faites connaissance avec vos abonnés
+    emailtemplateDescription: Créez des habillages réutilisables avec un en-tête, un pied de page et un cadre facultatif.
+    emailtemplateEmptyHint: Nommez votre modèle, ajoutez un en-tête et un pied de page, puis sélectionnez-le dans une newsletter.
+    emailtemplateEmptyTitle: Créez votre premier modèle personnalisé
     filterAll: Toutes
     filterStatus: Filtrer par statut
+    rowActions: 'Actions de la ligne %id%'
+    selectAll: Sélectionner toutes les lignes
+    selectRow: 'Sélectionner la ligne %id%'

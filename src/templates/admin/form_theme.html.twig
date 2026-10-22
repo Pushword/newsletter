@@ -1,5 +1,15 @@
 {% extends '@pwAdmin/form/admin_form_theme.html.twig' %}
 
+{% block integer_widget %}
+  {% if attr['data-pw-sequence-number'] is defined %}
+    {% set attr = attr|merge({'data-email-label': 'newsletter.step.email'|trans}) %}
+  {% endif %}
+  {{ parent() }}
+  {% if attr['data-pw-delay-preview'] is defined %}
+    <output class="form-text pw-newsletter-delay" for="{{ id }}" data-delay-output data-immediate="{{ 'newsletter.step.immediate'|trans }}" data-days="{{ 'newsletter.step.days'|trans }}" data-hours="{{ 'newsletter.step.hours'|trans }}" data-minutes="{{ 'newsletter.step.minutes'|trans }}" aria-live="polite"></output>
+  {% endif %}
+{% endblock %}
+
 {% block _Automation_steps_widget %}
   {% set isEmptyCollection = value is null or (value is iterable and value is empty) %}
   <div class="ea-form-collection-items pw-newsletter-sequence">
@@ -24,4 +34,14 @@
     <i class="fa fa-envelope" aria-hidden="true"></i>
     <p>{{ 'newsletter.step.empty'|trans }}</p>
   </div>
+{% endblock %}
+
+{% block _Automation_steps_entry_bodyMarkdown_row %}
+  {{ block('form_row') }}
+  <details class="pw-newsletter-step-preview">
+    <summary>{{ 'newsletter.step.preview'|trans }}</summary>
+    <div class="pw-newsletter-design" data-pw-email-preview data-preview-kind="automation" data-preview-step="{{ form.parent.vars.name }}" data-preview-url="{{ path('admin_newsletter_automation_preview') }}" data-preview-token="{{ csrf_token('newsletter_email_preview') }}" data-viewport="mobile">
+      {{ include('@PushwordNewsletter/admin/_email_preview.html.twig', {preview_id: form.vars.id ~ '-preview'}) }}
+    </div>
+  </details>
 {% endblock %}

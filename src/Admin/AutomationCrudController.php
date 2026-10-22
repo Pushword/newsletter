@@ -30,6 +30,7 @@ use Pushword\Newsletter\Segment\SegmentResolver;
 use Pushword\Newsletter\Trigger\TriggerSourceRegistry;
 use Symfony\Component\HttpFoundation\RedirectResponse;
 use Symfony\Component\Routing\Generator\UrlGeneratorInterface;
+use Symfony\Contracts\Translation\TranslatorInterface;
 
 /**
  * @extends AbstractCrudController<Automation>
@@ -46,6 +47,7 @@ class AutomationCrudController extends AbstractCrudController
         private readonly SiteRegistry $siteRegistry,
         private readonly AdminUrlGenerator $adminUrlGenerator,
         private readonly UrlGeneratorInterface $urlGenerator,
+        private readonly TranslatorInterface $translator,
     ) {
     }
 
@@ -81,6 +83,8 @@ class AutomationCrudController extends AbstractCrudController
             ->setCssClass('btn btn-outline-secondary');
 
         return $actions
+            ->disable(Action::SAVE_AND_ADD_ANOTHER)
+            ->update(Crud::PAGE_NEW, Action::SAVE_AND_RETURN, static fn (Action $action): Action => $action->setLabel('newsletter.automation.action.create'))
             ->update(Crud::PAGE_INDEX, Action::NEW, static fn (Action $action): Action => $action->setLabel('newsletter.automation.action.create'))
             ->add(Crud::PAGE_INDEX, Action::DETAIL)
             ->add(Crud::PAGE_INDEX, $preview)
@@ -106,7 +110,10 @@ class AutomationCrudController extends AbstractCrudController
 
         yield FormField::addFieldset('newsletter.automation.fieldset.setup')->setIcon('fa fa-sliders');
         yield TextField::new('name', 'newsletter.automation.field.name')->setColumns('col-12 col-lg-7');
-        yield AssociationField::new('audience', 'newsletter.automation.field.audience')->setColumns('col-12 col-lg-5');
+        yield AssociationField::new('audience', 'newsletter.automation.field.audience')
+            ->setColumns('col-12 col-lg-5')
+            ->setFormTypeOption('label_attr', ['id' => 'newsletter-automation-audience-label'])
+            ->setFormTypeOption('attr', ['aria-labelledby' => 'newsletter-automation-audience-label']);
         yield ChoiceField::new('enabled', 'newsletter.automation.field.enabled')
             ->onlyOnIndex()
             ->setChoices(['newsletter.automation.status.active' => 1, 'newsletter.automation.status.paused' => 0])
@@ -128,6 +135,7 @@ class AutomationCrudController extends AbstractCrudController
             ->setHelp('newsletter.automation.field.activeFrom.help');
 
         yield FormField::addFieldset('newsletter.automation.fieldset.recipients')->setIcon('fa fa-users')
+            ->setFormTypeOption('attr', ['data-pw-automation-recipients' => $this->translator->trans('newsletter.automation.contactRecipients')])
             ->setHelp('newsletter.automation.fieldset.recipientsHelp');
         yield CriteriaField::new('recipientWhenAsJson', 'newsletter.automation.field.recipientWhen', CriteriaController::SIDE_CONTACT, $this->urlGenerator)
             ->setNumOfRows(4)
