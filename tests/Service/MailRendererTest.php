@@ -22,6 +22,89 @@ final class MailRendererTest extends AbstractNewsletterTestCase
 {
     private const string UNSUBSCRIBE = 'https://localhost.dev/newsletter/unsubscribe/abcdef';
 
+    /** @return iterable<string, array{bool}> */
+    public static function layouts(): iterable
+    {
+        yield 'without a frame' => [false];
+        yield 'with a frame' => [true];
+    }
+
+    #[DataProvider('layouts')]
+    public function testAudienceDesignWrapsBothPartsAndKeepsTheUnsubscribeLink(bool $wrapped): void
+    {
+        $audience = $this->createAudience();
+        $audience->emailWrapped = $wrapped;
+        $audience->headerMarkdown = '## Brand name';
+        $audience->footerMarkdown = '[Contact](/contact)';
+
+        $contact = $this->createContact($audience, 'reader@example.tld');
+        $renderer = self::getContainer()->get(MailRenderer::class);
+
+        $html = $renderer->html($audience, $contact, 'Subject', 'Hello **%name%**.', null, self::UNSUBSCRIBE, null);
+        $crawler = new Crawler($html);
+        self::assertCount($wrapped ? 2 : 1, $crawler->filter('table[role="presentation"]'));
+        self::assertSame('Brand name', $crawler->filter('h2')->text());
+        self::assertStringContainsString('Hello Test.', $crawler->filter('body')->text());
+        self::assertCount(1, $crawler->filter('a[href="https://localhost.dev/contact"]'));
+        self::assertCount(1, $crawler->filter('a[href="'.self::UNSUBSCRIBE.'"]'));
+        self::assertStringContainsString('Brand name', $renderer->text($audience, $contact, 'Hello %name%.', self::UNSUBSCRIBE));
+        self::assertStringContainsString('[Contact](/contact)', $renderer->text($audience, $contact, 'Hello %name%.', self::UNSUBSCRIBE));
+    }
+
+    public function testAnOccurrenceFooterOverridesTheAudienceFooter(): void
+    {
+        $audience = $this->createAudience();
+        $audience->footerMarkdown = 'Audience signature';
+        self::assertSame('Audience signature', SendContext::fromAudience($audience)->footerMarkdown);
+        $contact = $this->createContact($audience, 'reader@example.tld');
+        $context = new SendContext('localhost.dev', 'mail@example.tld', 'Brand', footerMarkdown: 'Local signature');
+        $renderer = self::getContainer()->get(MailRenderer::class);
+        $html = $renderer->html($audience, $contact, 'Subject', 'Body', null, null, null, sendContext: $context);
+
+        self::assertStringContainsString('Local signature', $html);
+        self::assertStringNotContainsString('Audience signature', $html);
+        self::assertStringContainsString('Local signature', $renderer->text($audience, $contact, 'Body', null, $context));
+        self::assertStringNotContainsString('Audience signature', $renderer->text($audience, $contact, 'Body', null, $context));
+    }
+
+    public function testATwigPresetControlsTheDesignWithoutLosingTheEditableLayout(): void
+    {
+        $audience = $this->createAudience();
+        $audience->headerMarkdown = 'Editable brand';
+        $audience->footerMarkdown = 'Editable signature';
+        $audience->postalAddress = '12 Baker Street';
+        $audience->emailLayout = 'twig:pushword';
+
+        $contact = $this->createContact($audience, 'reader@example.tld');
+        $renderer = self::getContainer()->get(MailRenderer::class);
+        $context = SendContext::fromAudience($audience);
+        $html = $renderer->html($audience, $contact, 'Subject', 'Hello **%name%**.', null, self::UNSUBSCRIBE, null, sendContext: $context);
+        $crawler = new Crawler($html);
+
+        self::assertCount(2, $crawler->filter('table[role="presentation"]'));
+        self::assertStringContainsString('Pushword', $crawler->filter('td')->first()->text());
+        self::assertStringContainsString('Hello Test.', $crawler->filter('body')->text());
+        self::assertStringContainsString($audience->name, $crawler->filter('td')->last()->text());
+        self::assertStringContainsString('12 Baker Street', $html);
+        self::assertCount(1, $crawler->filter('a[href="'.self::UNSUBSCRIBE.'"]'));
+        self::assertStringNotContainsString('Editable', $html);
+        $text = $renderer->text($audience, $contact, 'Hello %name%.', self::UNSUBSCRIBE, $context);
+        self::assertStringNotContainsString('Editable', $text);
+        self::assertStringContainsString('Hello Test.', $text);
+        self::assertStringContainsString('12 Baker Street', $text);
+        self::assertStringContainsString(self::UNSUBSCRIBE, $text);
+        self::assertStringNotContainsString('Editable', $renderer->text($audience, $contact, 'Body', null));
+        $override = new SendContext('localhost.dev', 'mail@example.tld', 'Brand', footerMarkdown: 'Occurrence signature');
+        self::assertStringContainsString('Occurrence signature', $renderer->text($audience, $contact, 'Body', null, $override));
+
+        $audience->emailLayout = 'simple';
+        self::assertNull($audience->emailTemplate);
+        self::assertFalse($audience->emailWrapped);
+        $html = $renderer->html($audience, $contact, 'Subject', 'Body', null, null, null);
+        self::assertStringContainsString('Editable brand', $html);
+        self::assertStringContainsString('Editable signature', $html);
+    }
+
     public function testEmailAddressesInBodyAndFooterNeedNoJavaScriptAndSensitiveLinksStayDirect(): void
     {
         $audience = $this->createAudience();
@@ -158,6 +241,8 @@ final class MailRendererTest extends AbstractNewsletterTestCase
     {
         $audience = $this->createAudience();
         $audience->postalAddress = "Test Publishing\n12 Baker Street";
+        $audience->emailWrapped = true;
+        $audience->footerMarkdown = 'Service signature';
 
         $contact = $this->createContact($audience, 'reader@example.tld');
         $renderer = self::getContainer()->get(MailRenderer::class);
@@ -168,6 +253,8 @@ final class MailRendererTest extends AbstractNewsletterTestCase
         self::assertStringNotContainsString('Unsubscribe', $html);
         self::assertStringContainsString('12 Baker Street', $html);
         self::assertStringContainsString('12 Baker Street', $text);
+        self::assertStringContainsString('Service signature', $html);
+        self::assertStringContainsString('Service signature', $text);
     }
 
     /** An audience with neither has no foot to draw, and no rule to draw it under. */

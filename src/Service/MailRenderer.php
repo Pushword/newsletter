@@ -32,6 +32,7 @@ final readonly class MailRenderer
         private SiteRegistry $siteRegistry,
         private UtmDecorator $utmDecorator,
         private ClickTracker $clickTracker,
+        private EmailTemplateRegistry $emailTemplates,
     ) {
     }
 
@@ -54,8 +55,9 @@ final readonly class MailRenderer
         ?string $locale = null,
         array $untrackedUrls = [],
     ): string {
+        $host = $sendContext->mainHost ?? $audience->mainHost;
         $body = $this->markdownParser->transform($this->personalize($bodyMarkdown, $contact));
-        $body = $this->absolutize($body, $sendContext->mainHost ?? $audience->mainHost);
+        $body = $this->absolutize($body, $host);
         // Tagging the body and not the rendered mail leaves the template's
         // unsubscribe link alone: leaving is an exit, not a visit.
         $body = $this->utmDecorator->decorate($body, $audience, $utmTag, $untrackedUrls);
@@ -67,14 +69,20 @@ final readonly class MailRenderer
             $body = $this->clickTracker->rewrite($body, $audience, $contact, $trackedMail, $untrackedUrls, $sendContext?->mainHost, $sendContext?->systemLinkBaseUrl);
         }
 
-        return $this->twig->render($this->view($audience, 'email.html.twig', $sendContext), [
+        $template = null === $audience->emailTemplate
+            ? $this->view($audience, 'email.html.twig', $sendContext)
+            : $this->emailTemplates->template($audience->emailTemplate);
+
+        return $this->twig->render($template, [
             'audience' => $audience,
             'contact' => $contact,
             'sendContext' => $sendContext,
             'locale' => $locale ?? $contact->locale,
             'audienceName' => $sendContext->audienceName ?? $audience->name,
             'postalAddress' => null !== $sendContext ? $sendContext->postalAddress : $audience->postalAddress,
-            'footer' => $this->markdownParser->transform($sendContext->footerMarkdown ?? ''),
+            'wrapped' => $audience->emailWrapped,
+            'header' => $this->absolutize($this->markdownParser->transform($audience->headerMarkdown), $host),
+            'footer' => $this->absolutize($this->markdownParser->transform($sendContext->footerMarkdown ?? $audience->footerMarkdown), $host),
             'subject' => $this->personalize($subject, $contact),
             'preheader' => null !== $preheader ? $this->personalize($preheader, $contact) : null,
             'body' => $body,
@@ -108,9 +116,15 @@ final readonly class MailRenderer
     public function text(Audience $audience, Contact $contact, string $bodyMarkdown, ?string $unsubscribeUrl, ?SendContext $sendContext = null): string
     {
         $postalAddress = null !== $sendContext ? $sendContext->postalAddress : $audience->postalAddress;
-        $foot = array_filter([$unsubscribeUrl, $postalAddress, $sendContext?->footerMarkdown], static fn (?string $value): bool => null !== $value && '' !== $value);
+        $header = null === $audience->emailTemplate ? $audience->headerMarkdown : '';
+        $footer = null === $audience->emailTemplate ? $audience->footerMarkdown : '';
+        $foot = array_filter(
+            [$unsubscribeUrl, $postalAddress, $sendContext->footerMarkdown ?? $footer],
+            static fn (?string $value): bool => null !== $value && '' !== $value,
+        );
 
-        return $this->personalize($bodyMarkdown, $contact)
+        return ('' === $header ? '' : $header."\n\n")
+            .$this->personalize($bodyMarkdown, $contact)
             .([] === $foot ? '' : "\n\n---\n".implode("\n\n", $foot)."\n");
     }
 
