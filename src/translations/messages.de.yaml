@@ -1,4 +1,26 @@
 newsletter:
+  campaign:
+    design:
+      personal: "Nur Servicenachrichten: Inhalt und Signatur von „%audience%“, ohne Abmeldelink oder Abmelde-Header."
+      personalCustomize: "Signatur anpassen"
+      personalEdit: "Signatur der Zielgruppe bearbeiten (neuer Tab)"
+      personalWarning: "Signaturänderungen gelten für alle persönlichen E-Mails an diese Zielgruppe."
+    review:
+      allContacts: Alle abonnierten Kontakte
+      emptyAudienceHelp: Wählen Sie eine Zielgruppe, um die Vorschau und die Empfänger vorzubereiten.
+      emptyAudienceTitle: Wählen Sie die Empfänger dieser E-Mail
+      emptyBodyHelp: Schreiben Sie Ihre Nachricht, um die Vorschau zu sehen.
+      emptyBodyTitle: Diese E-Mail hat noch keinen Inhalt
+      filteredContacts: Gefilterte Kontakte
+      moreActions: Weitere Aktionen
+      settings: Erweiterte Optionen
+      source: Markdown-Quelltext
+      status:
+        draft: Entwurf
+        scheduled: Geplant
+        sending: Wird gesendet
+        sent: Gesendet
+      summary: Empfänger und Versand
   catalogue:
     actions: Aktionen
     createNative: In Pushword erstellen
@@ -16,6 +38,13 @@ newsletter:
     statusPaused: Pausiert
     timezone: Zeiten in %timezone%.
     unknown: Nicht angegeben
+  design:
+    otherTemplates: "Weitere Vorlagen"
+    personal: Persönliche E-Mail
+    personalHelp: "Inhalt und Signatur ohne Abmeldung. Nur für Servicenachrichten."
+    personalSignature: "Signatur für persönliche E-Mails"
+    signature: Signatur
+    signatureHelp: Markdown-Signatur nur für persönliche E-Mails. Leer lassen, um nur den Inhalt zu senden.
   email:
     unsubscribe: Abmelden
   statistics:
@@ -26,7 +55,6 @@ newsletter:
     activityHelp: "Ereignisse im gewählten Zeitraum. Eine Bestätigung kann auf eine Anmeldung folgen; diese Zahlen nicht addieren."
     activityOptin: "Anmeldungen"
     activityResubscribe: "Erneute Anmeldungen"
-    activitySummary: "Erfasste Ereignisse im gewählten Zeitraum."
     activityUnsubscribe: "Abmeldungen"
     allAudiences: "Alle Zielgruppen"
     apply: "Anwenden"
@@ -53,7 +81,6 @@ newsletter:
     contactUnsubscribed: "Abgemeldete Kontakte"
     contacts: "Zustand der Zielgruppen heute"
     contactsHelp: "Aktuelle Abonnements der gewählten Zielgruppe, unabhängig vom Zeitraum. Ein Kontakt in zwei Listen zählt zweimal."
-    contactsSummary: "Aktuelle Abonnements der gewählten Zielgruppe."
     correctFilters: "Korrigieren Sie die markierten Filter, um Ergebnisse anzuzeigen."
     date: "Erster Versand"
     delivery: "Versandergebnisse"
@@ -104,3 +131,15 @@ newsletter:
     unsubscribeRate: "Abmelderate"
     unsubscribed: "Abmeldungen"
     url: "Ziel-URL"
+
+newsletter.criteria.help: "Hilfe zur Syntax"
+newsletterHelpClickTracking: "Nur Kontakte mit Einwilligung."
+newsletterHelpConsent: "Nur mit Einwilligungsnachweis eintragen. Leeren löscht gespeicherte Klicks."
+newsletterHelpDoubleOptIn: "Bestätigung per E-Mail erforderlich."
+newsletterHelpIdentifier: "E-Mail oder Telefon erforderlich. Ohne E-Mail-Adresse werden keine E-Mails gesendet."
+newsletterHelpMoveSubscription: "Eine Änderung verschiebt das Abonnement."
+newsletterHelpPhone: "Ohne E-Mail-Adresse erhält dieser Kontakt keine E-Mails."
+newsletterHelpRates: "Die Raten beziehen sich auf gesendete E-Mails."
+newsletterHelpSchedule: "Entwurf speichern, dann mit „Planen“ bestätigen."
+newsletterHelpSharedTemplate: "Änderungen gelten für alle Zielgruppen und Kampagnen mit dieser Vorlage."
+newsletterHelpTransactional: "Ohne Abmeldelinks oder -Header. Nur für Servicenachrichten."
