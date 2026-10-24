@@ -28,6 +28,29 @@ use Symfony\Component\Mime\Email;
 #[Group('integration')]
 final class NewsletterAdminTest extends AbstractAdminTestClass
 {
+    public function testInitialEmptyCampaignOffersOneCreateAction(): void
+    {
+        $client = $this->loginUser();
+        $crawler = $client->request(Request::METHOD_GET, '/admin/newsletter/campaign');
+        self::assertResponseIsSuccessful();
+        self::assertCount(1, $crawler->filter('.pw-newsletter-empty a.btn-primary'));
+        self::assertCount(0, $crawler->filter('.content-header .action-new, .pw-newsletter-status'));
+    }
+
+    public function testAudienceActionsRemainAvailableInOneMenu(): void
+    {
+        $client = $this->loginUser();
+        $this->seed();
+        $crawler = $client->request(Request::METHOD_GET, '/admin/newsletter/audience');
+        self::assertResponseIsSuccessful();
+
+        $rows = $crawler->filter('.datagrid tbody tr[data-id]');
+        self::assertGreaterThan(0, $rows->count());
+        self::assertCount($rows->count(), $rows->filter('.actions-as-dropdown .dropdown-toggle'));
+        self::assertCount($rows->count(), $rows->filter('.actions-as-dropdown [data-action-name="emailDesign"]'));
+        self::assertCount($rows->count(), $rows->filter('.actions-as-dropdown [data-action-name="delete"]'));
+    }
+
     private ?int $audienceId = null;
 
     /** @var list<int> */
@@ -1214,6 +1237,10 @@ final class NewsletterAdminTest extends AbstractAdminTestClass
         self::assertSame(200, $client->getResponse()->getStatusCode());
         self::assertCount(1, $panel);
         self::assertCount(2, $panel->filter('tbody tr'));
+        self::assertSame(
+            ['When', 'What', 'Source', 'Host', 'IP'],
+            $panel->filter('tbody tr')->first()->filter('td')->each(static fn (Crawler $cell): ?string => $cell->attr('data-label')),
+        );
         self::assertStringContainsString('Opted in', $panel->text());
         self::assertStringContainsString('Unsubscribed', $panel->text());
         self::assertSame(2, substr_count($panel->text(), 'admin:'));
@@ -1567,9 +1594,14 @@ final class NewsletterAdminTest extends AbstractAdminTestClass
         $crawler = $client->request(Request::METHOD_GET, '/admin/newsletter/contact/'.$contact->id);
 
         self::assertSame(200, $client->getResponse()->getStatusCode());
-        self::assertCount(1, $crawler->filter('.form-fieldset')->reduce(
+        $panel = $crawler->filter('.form-fieldset')->reduce(
             static fn (Crawler $node): bool => str_contains($node->text(), 'Subscriptions'),
-        ));
+        );
+        self::assertCount(1, $panel);
+        self::assertSame(
+            ['Audience', 'Host', 'Status', 'Registered at'],
+            $panel->filter('tbody tr')->first()->filter('td')->each(static fn (Crawler $cell): ?string => $cell->attr('data-label')),
+        );
     }
 
     /** A pending opt-in an admin can vouch for becomes a subscription without the click. */
