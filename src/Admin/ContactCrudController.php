@@ -97,6 +97,7 @@ class ContactCrudController extends AbstractCrudController
             ->setPageTitle(Crud::PAGE_DETAIL, static fn (Contact $contact): string => (string) $contact)
             ->overrideTemplate('label/null', '@PushwordNewsletter/admin/empty_value.html.twig')
             ->setDefaultSort(['id' => 'DESC'])
+            ->setFormOptions(['attr' => ['class' => 'pw-compact-form']])
             ->setSearchFields(['email', 'phone', 'name', 'tags'])
             ->overrideTemplates([
                 'crud/edit' => '@PushwordNewsletter/admin/contact_edit.html.twig',
@@ -171,7 +172,7 @@ class ContactCrudController extends AbstractCrudController
     #[Override]
     public function configureFields(string $pageName): iterable
     {
-        yield FormField::addColumn(Crud::PAGE_DETAIL === $pageName ? 'col-12 col-lg-6 mainFields' : 'col-12 col-lg-8 mainFields');
+        yield FormField::addColumn(Crud::PAGE_DETAIL === $pageName ? 'col-12 col-lg-6 mainFields' : 'col-12 col-lg-7 mainFields');
         yield FormField::addFieldset('newsletter.contact.fieldset.identity');
         yield Field::new('id', 'newsletter.contact.label.singular')->onlyOnIndex()
             ->setSortable(false)
@@ -180,7 +181,8 @@ class ContactCrudController extends AbstractCrudController
         yield TelephoneField::new('phone', 'newsletter.contact.field.phone')
             ->hideOnIndex()
             ->setRequired(false)
-            ->setHelp('newsletter.contact.field.phone.help');
+            ->setHelp('newsletter.contact.field.phone.help')
+            ->setFormTypeOption('context_help', 'newsletterHelpPhone');
         yield TextField::new('name', 'newsletter.contact.field.name')->hideOnIndex();
         yield ChoiceField::new('status', 'newsletter.contact.field.status')
             ->setChoices([
@@ -201,12 +203,14 @@ class ContactCrudController extends AbstractCrudController
         yield TextField::new('tags', 'newsletter.contact.field.tags')->setRequired(false)->hideOnIndex();
         yield TextareaField::new('unmanagedPropertiesAsYaml', 'newsletter.contact.field.customProperties')
             ->hideOnIndex()
-            ->setHelp('newsletter.contact.field.customProperties.help');
+            ->setHelp('newsletter.contact.field.customProperties.help')
+            ->setFormTypeOption('context_help', 'adminHelpYaml');
 
-        yield FormField::addColumn(Crud::PAGE_DETAIL === $pageName ? 'col-12 col-lg-6 columnFields' : 'col-12 col-lg-4 columnFields');
+        yield FormField::addColumn(Crud::PAGE_DETAIL === $pageName ? 'col-12 col-lg-6 columnFields' : 'col-12 col-lg-5 columnFields');
         yield FormField::addFieldset('newsletter.contact.fieldset.consent');
         yield AssociationField::new('audience', 'newsletter.contact.field.audience')
-            ->setHelp('newsletter.contact.field.audience.help');
+            ->setHelp('newsletter.contact.field.audience.help')
+            ->setFormTypeOption('context_help', 'newsletterHelpMoveSubscription');
         yield TextField::new('locale', 'newsletter.contact.field.locale')->hideOnIndex();
         yield TextField::new('source', 'newsletter.contact.field.source')->hideOnIndex()->setDisabled();
         yield TextField::new('optinHost', 'newsletter.contact.field.optinHost')->hideOnIndex()->setDisabled();
@@ -214,7 +218,8 @@ class ContactCrudController extends AbstractCrudController
         yield DateTimeField::new('clickTrackingConsentAt', 'newsletter.contact.field.clickTrackingConsentAt')
             ->hideOnIndex()
             ->setRequired(false)
-            ->setHelp('newsletter.contact.field.clickTrackingConsentAt.help');
+            ->setHelp('newsletter.contact.field.clickTrackingConsentAt.help')
+            ->setFormTypeOption('context_help', 'newsletterHelpConsent');
         yield DateTimeField::new('createdAt', 'newsletter.contact.field.registeredAt')->hideOnForm();
         yield DateTimeField::new('confirmedAt', 'newsletter.contact.field.confirmedAt')->onlyOnDetail();
         yield DateTimeField::new('unsubscribedAt', 'newsletter.contact.field.unsubscribedAt')->onlyOnDetail();
