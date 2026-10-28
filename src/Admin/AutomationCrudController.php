@@ -21,12 +21,14 @@ use EasyCorp\Bundle\EasyAdminBundle\Field\IntegerField;
 use EasyCorp\Bundle\EasyAdminBundle\Field\TextField;
 use EasyCorp\Bundle\EasyAdminBundle\Router\AdminUrlGenerator;
 use Override;
+use Pushword\AdminBlockEditor\Form\EditorjsType;
 use Pushword\Core\Site\SiteRegistry;
 use Pushword\Newsletter\Controller\CriteriaController;
 use Pushword\Newsletter\Entity\Audience;
 use Pushword\Newsletter\Entity\Automation;
 use Pushword\Newsletter\Segment\SegmentException;
 use Pushword\Newsletter\Segment\SegmentResolver;
+use Pushword\Newsletter\Trigger\TriggerSource;
 use Pushword\Newsletter\Trigger\TriggerSourceRegistry;
 use Symfony\Component\HttpFoundation\RedirectResponse;
 use Symfony\Component\Routing\Generator\UrlGeneratorInterface;
@@ -59,7 +61,7 @@ class AutomationCrudController extends AbstractCrudController
     #[Override]
     public function configureCrud(Crud $crud): Crud
     {
-        return $crud
+        $crud = $crud
             ->overrideTemplate('layout', '@PushwordNewsletter/admin/layout.html.twig')
             ->overrideTemplate('crud/index', '@PushwordNewsletter/admin/index.html.twig')
             ->addFormTheme('@PushwordNewsletter/admin/form_theme.html.twig')
@@ -67,6 +69,12 @@ class AutomationCrudController extends AbstractCrudController
             ->setEntityLabelInPlural('newsletter.automation.label.plural')
             ->setDefaultSort(['id' => 'DESC'])
             ->setSearchFields(['name']);
+
+        if (class_exists(EditorjsType::class)) {
+            return $crud->addFormTheme('@PushwordAdminBlockEditor/editorjs_widget.html.twig');
+        }
+
+        return $crud;
     }
 
     #[Override]
@@ -192,7 +200,7 @@ class AutomationCrudController extends AbstractCrudController
             return new RedirectResponse($this->indexUrl());
         }
 
-        if (null === $source) {
+        if (! $source instanceof TriggerSource) {
             $this->addFlash('danger', \sprintf('No trigger source is named "%s".', $automation->source));
 
             return new RedirectResponse($this->indexUrl());

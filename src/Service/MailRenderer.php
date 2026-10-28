@@ -65,7 +65,7 @@ final readonly class MailRenderer
         ?string $messageReference = null,
     ): string {
         $host = $sendContext->mainHost ?? $audience->mainHost;
-        $body = $this->markdownParser->transform($this->personalize($bodyMarkdown, $contact));
+        $body = $this->markdownParser->transform($this->personalize($bodyMarkdown, $contact), $host);
         $body = $this->absolutize($body, $host);
         // The body is instrumented first; explicitly marked template roles follow below.
         $body = $this->utmDecorator->decorate($body, $audience, $utmTag, $untrackedUrls);
@@ -85,7 +85,7 @@ final readonly class MailRenderer
                 'locale' => $locale ?? $contact->locale,
                 'subject' => $this->personalize($subject, $contact),
                 'body' => $body,
-                'signature' => $this->markScope($this->absolutize($this->markdownParser->transform($signature), $host), 'footer'),
+                'signature' => $this->markScope($this->absolutize($this->markdownParser->transform($signature, $host), $host), 'footer'),
             ]);
 
             return $this->templateLinks($html, $audience, $contact, $trackedMail, $utmTag, $sendContext, $untrackedUrls, $unsubscribeUrl, $messageReference);
@@ -106,10 +106,10 @@ final readonly class MailRenderer
             'audienceName' => $sendContext->audienceName ?? $audience->name,
             'siteName' => $this->siteRegistry->get($host)->name,
             'year' => new DateTimeImmutable()->format('Y'),
-            'postalAddress' => null !== $sendContext ? $sendContext->postalAddress : $audience->postalAddress,
+            'postalAddress' => $sendContext instanceof SendContext ? $sendContext->postalAddress : $audience->postalAddress,
             'wrapped' => $saved->wrapped ?? 'framed' === $layout,
-            'header' => $this->markScope($this->absolutize($this->markdownParser->transform($header), $host), 'navigation'),
-            'footer' => $this->markScope($this->absolutize($this->markdownParser->transform($footer), $host), 'footer'),
+            'header' => $this->markScope($this->absolutize($this->markdownParser->transform($header, $host), $host), 'navigation'),
+            'footer' => $this->markScope($this->absolutize($this->markdownParser->transform($footer, $host), $host), 'footer'),
             'subject' => $this->personalize($subject, $contact),
             'preheader' => null !== $preheader ? $this->personalize($preheader, $contact) : null,
             'body' => $body,
@@ -169,7 +169,7 @@ final readonly class MailRenderer
             return $this->personalize($bodyMarkdown, $contact).('' === $signature ? '' : "\n\n".$signature);
         }
 
-        $postalAddress = null !== $sendContext ? $sendContext->postalAddress : $audience->postalAddress;
+        $postalAddress = $sendContext instanceof SendContext ? $sendContext->postalAddress : $audience->postalAddress;
         $saved = $this->emailTemplates->saved($layout);
         $custom = str_starts_with($layout, 'twig:');
         $header = $custom ? '' : ($saved->headerMarkdown ?? $audience->headerMarkdown);
