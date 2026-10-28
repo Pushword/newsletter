@@ -11,6 +11,8 @@ use Pushword\Newsletter\Entity\Campaign;
 use Pushword\Newsletter\Entity\CampaignRecipient;
 use Pushword\Newsletter\Repository\CampaignRecipientRepository;
 use Pushword\Newsletter\Segment\SegmentResolver;
+use Pushword\Newsletter\Validation\CampaignPreflight;
+use Pushword\Newsletter\Validation\CampaignValidationFailed;
 use Throwable;
 
 /**
@@ -28,7 +30,50 @@ final readonly class CampaignSender
         private CampaignRecipientRepository $recipientRepository,
         private EntityManagerInterface $entityManager,
         private NewsletterMailer $mailer,
+        private CampaignPreflight $preflight,
     ) {
+    }
+
+    /** Explicit send: a future date schedules delivery, otherwise it starts now. */
+    public function send(Campaign $campaign): int
+    {
+        if ($campaign->scheduledAt instanceof DateTimeImmutable && $campaign->scheduledAt > new DateTimeImmutable()) {
+            $this->schedule($campaign, $campaign->scheduledAt);
+
+            return 0;
+        }
+
+        return $this->arm($campaign);
+    }
+
+    public function schedule(Campaign $campaign, DateTimeImmutable $when): void
+    {
+        $this->assertSendable($campaign, $when);
+        $campaign->schedule($when);
+        $this->entityManager->flush();
+    }
+
+    private function assertSendable(Campaign $campaign, ?DateTimeImmutable $when = null): void
+    {
+        if (! $campaign->isDraft() && ! $campaign->isScheduled()) {
+            throw new LogicException('Only a draft or scheduled campaign can be armed.');
+        }
+
+        if ($when instanceof DateTimeImmutable) {
+            $campaign->scheduledAt = $when;
+        }
+
+        try {
+            $this->preflight->assertCanSend($campaign);
+        } catch (CampaignValidationFailed $campaignValidationFailed) {
+            $campaign->recordSendIssues($campaignValidationFailed->issues);
+            $campaign->revertToDraft();
+            $this->entityManager->flush();
+
+            throw $campaignValidationFailed;
+        }
+
+        $campaign->recordSendIssues([]);
     }
 
     /**
@@ -38,11 +83,8 @@ final readonly class CampaignSender
      */
     public function arm(Campaign $campaign): int
     {
+        $this->assertSendable($campaign);
         $audience = $campaign->audience ?? throw new LogicException('Campaign has no audience.');
-
-        if (! $campaign->isDraft() && ! $campaign->isScheduled()) {
-            throw new LogicException('Only a draft or scheduled campaign can be armed.');
-        }
 
         $already = array_flip($this->recipientRepository->contactIds($campaign));
         $count = 0;

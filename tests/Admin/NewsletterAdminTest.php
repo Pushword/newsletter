@@ -28,6 +28,30 @@ use Symfony\Component\Mime\Email;
 #[Group('integration')]
 final class NewsletterAdminTest extends AbstractAdminTestClass
 {
+    public function testSecondaryCampaignActionsStillSaveAndContinueEditing(): void
+    {
+        $client = $this->loginUser();
+        $campaign = $this->campaign($this->seed(), 'Campaign actions');
+        $this->entityManager()->flush();
+        $id = $campaign->id;
+        $url = '/admin/newsletter/campaign/'.$id.'/edit';
+        $crawler = $client->request(Request::METHOD_GET, $url);
+        self::assertResponseIsSuccessful();
+        $secondary = $crawler->filter('.pw-newsletter-more-actions');
+        self::assertCount(1, $secondary->selectLink('Duplicate as draft'));
+        self::assertCount(1, $secondary->selectLink('Count audience'));
+        $form = $secondary->selectButton('Save and continue editing')->form();
+        $form['Campaign[workingTitle]'] = 'Updated working title';
+        $client->submit($form);
+        self::assertResponseRedirects($url);
+        $this->entityManager()->clear();
+        $stored = $this->entityManager()->find(Campaign::class, $id);
+        self::assertNotNull($stored);
+        self::assertSame('Updated working title', $stored->workingTitle);
+        self::assertTrue($stored->isDraft());
+        self::assertEmailCount(0);
+    }
+
     public function testInitialEmptyCampaignOffersOneCreateAction(): void
     {
         $client = $this->loginUser();
@@ -35,6 +59,59 @@ final class NewsletterAdminTest extends AbstractAdminTestClass
         self::assertResponseIsSuccessful();
         self::assertCount(1, $crawler->filter('.pw-newsletter-empty a.btn-primary'));
         self::assertCount(0, $crawler->filter('.content-header .action-new, .pw-newsletter-status'));
+    }
+
+    public function testDuplicationOpensAnUnsavedDraftAndSavingLeavesTheOriginalIntact(): void
+    {
+        $client = $this->loginUser();
+        $audience = $this->seed();
+        $original = $this->campaign($audience, 'Sent campaign to copy');
+        $original->preheader = 'Original preview';
+        $original->bodyMarkdown = 'Hello **%firstName|there%**.';
+        $original->emailLayout = 'framed';
+        $original->translations = ['fr' => ['subject' => 'Bonjour']];
+        $original->schedule(new DateTimeImmutable('-1 day'))->markSending(4)->incrementSent()->markSent();
+        $identity = $original->getUtmId();
+        $em = $this->entityManager();
+        $em->flush();
+
+        $before = $em->getRepository(Campaign::class)->count(['audience' => $audience]);
+
+        $crawler = $client->request(Request::METHOD_GET, '/admin/newsletter/campaign/'.$original->id);
+        self::assertResponseIsSuccessful();
+        $preview = new Crawler($crawler->filter('.pw-campaign-preview iframe')->attr('srcdoc') ?? '');
+        self::assertStringContainsString('Hello Alex.', $preview->filter('body')->text());
+        $crawler = $client->click($crawler->selectLink('Duplicate as draft')->link());
+        self::assertResponseIsSuccessful();
+        self::assertSame($before, $em->getRepository(Campaign::class)->count(['audience' => $audience]));
+        $form = $crawler->selectButton('Save draft')->form();
+        $values = $form->getValues();
+        self::assertSame('Sent campaign to copy', $values['Campaign[subject]']);
+        self::assertSame('', $values['Campaign[scheduledAt]']);
+        self::assertSame('framed', $values['Campaign[emailLayout]']);
+        $form['Campaign[subject]'] = 'A new draft';
+        $client->submit($form);
+        self::assertResponseRedirects('http://localhost/admin/newsletter/campaign');
+
+        $crawler = $client->followRedirect();
+        $crawler = $client->click($crawler->selectLink('Create newsletter')->link());
+        self::assertResponseIsSuccessful();
+        self::assertSame('', $crawler->filter('#Campaign_subject')->attr('value') ?? '');
+
+        $em->clear();
+        $copy = $em->getRepository(Campaign::class)->findOneBy(['subject' => 'A new draft']);
+        self::assertInstanceOf(Campaign::class, $copy);
+        self::assertTrue($copy->isDraft());
+        self::assertNull($copy->scheduledAt);
+        self::assertSame(0, $copy->recipientCount);
+        self::assertSame('Original preview', $copy->preheader);
+        self::assertSame('Bonjour', $copy->contentFor('fr')['subject']);
+        self::assertNotSame($identity, $copy->getUtmId());
+        $savedOriginal = $em->find(Campaign::class, $original->id);
+        self::assertInstanceOf(Campaign::class, $savedOriginal);
+        self::assertSame('sent', $savedOriginal->getStatusLabel());
+        self::assertSame(1, $savedOriginal->sentCount);
+        self::assertSame('Sent campaign to copy', $savedOriginal->subject);
     }
 
     /** The newsletter screens bring their own assets; the rest of the admin does not pay for them. */
@@ -175,15 +252,39 @@ final class NewsletterAdminTest extends AbstractAdminTestClass
         parent::tearDown();
     }
 
+    public function testAuthorizedCampaignContentCannotBeChangedThroughTheForm(): void
+    {
+        $client = $this->loginUser();
+        $campaign = $this->campaign($this->seed(), 'Frozen subject');
+        $campaign->schedule(new DateTimeImmutable('+1 day'));
+        $this->entityManager()->flush();
+        $id = $campaign->id;
+        $url = '/admin/newsletter/campaign/'.$id.'/edit';
+        $crawler = $client->request('GET', $url);
+        self::assertResponseIsSuccessful();
+        self::assertSelectorExists('input[name="Campaign[subject]"][disabled]');
+        self::assertSelectorExists('textarea[name="Campaign[bodyMarkdown]"][disabled]');
+        $form = $crawler->selectButton('Save changes')->form();
+        $values = $form->getPhpValues();
+        self::assertIsArray($values['Campaign']);
+        $values['Campaign']['subject'] = 'Tampered after authorization';
+        $client->request('POST', $url, $values);
+        self::assertResponseRedirects();
+        $this->entityManager()->clear();
+        $stored = $this->entityManager()->find(Campaign::class, $id);
+        self::assertNotNull($stored);
+        self::assertSame('Frozen subject', $stored->subject);
+    }
+
     public function testEveryIndexRenders(): void
     {
         $client = $this->loginUser();
         $this->seed();
 
-        foreach (['audience', 'contact', 'campaign', 'campaigns', 'template', 'campaign-recipient', 'automation', 'automation-delivery'] as $section) {
+        foreach (['audience', 'contact', 'campaign', 'campaigns', 'template', 'block', 'campaign-recipient', 'automation', 'automation-delivery'] as $section) {
             $crawler = $client->request(Request::METHOD_GET, '/admin/newsletter/'.$section);
             self::assertSame(200, $client->getResponse()->getStatusCode(), $section.' index');
-            self::assertCount(7, $crawler->filter('.pw-newsletter-nav a'));
+            self::assertCount(8, $crawler->filter('.pw-newsletter-nav a'));
             $viewport = $crawler->filter('meta[name="viewport"]')->attr('content') ?? '';
             self::assertStringNotContainsString('user-scalable=no', $viewport);
             self::assertStringNotContainsString('maximum-scale=1', $viewport);
@@ -512,7 +613,7 @@ final class NewsletterAdminTest extends AbstractAdminTestClass
         $client->click($row->filter('a.action-detail')->link());
         self::assertResponseIsSuccessful();
         self::assertSelectorExists('form[action*="/send"]');
-        self::assertSelectorExists('form[action*="/schedule"]');
+        self::assertSelectorNotExists('form[action*="/schedule"]');
     }
 
     public function testCampaignReviewRendersTheEmailAndKeepsSourceCollapsed(): void
@@ -825,7 +926,8 @@ final class NewsletterAdminTest extends AbstractAdminTestClass
         $client = $this->loginUser();
         $audience = $this->seed();
         $crawler = $client->request(Request::METHOD_GET, '/admin/newsletter/campaign/new');
-        self::assertStringContainsString('Choose the audience and design', $crawler->filter('.form-fieldset')->first()->text());
+        self::assertStringContainsString('Preparation', $crawler->filter('.form-fieldset')->first()->text());
+        self::assertStringContainsString('Choose the audience and design', $crawler->filter('.form-fieldset')->eq(1)->text());
         foreach (['pushword', 'pushword_letter', 'pushword_bulletin'] as $preset) {
             self::assertCount(1, $crawler->filter('select[name="Campaign[emailLayout]"] option[value="twig:'.$preset.'"]'));
         }
@@ -1088,6 +1190,49 @@ final class NewsletterAdminTest extends AbstractAdminTestClass
         self::assertCount(0, $crawler->filter('a[href*="campaign-recipient"]'));
     }
 
+    public function testSavingAnIncompleteIdeaAndSendingWithOneDate(): void
+    {
+        $client = $this->loginUser();
+        $crawler = $client->request('GET', '/admin/newsletter/campaign/new');
+        $form = $crawler->filter('form[name="Campaign"]')->form();
+        $form['Campaign[workingTitle]'] = 'Incomplete calendar idea';
+        $form['Campaign[editorialStage]'] = 'review';
+        $form['Campaign[scheduledAt]'] = '2030-06-01T09:30';
+        $client->submit($form);
+        self::assertResponseRedirects();
+        $campaign = $this->entityManager()->getRepository(Campaign::class)->findOneBy(['workingTitle' => 'Incomplete calendar idea']);
+        self::assertInstanceOf(Campaign::class, $campaign);
+        $id = $campaign->id;
+
+        try {
+            self::assertNull($campaign->audience);
+            self::assertSame('', $campaign->subject);
+            self::assertTrue($campaign->isDraft());
+            $client->request('POST', '/admin/newsletter/campaign/'.$id.'/send', ['_token' => $this->adminActionToken('send', (int) $id)]);
+            self::assertResponseRedirects();
+            $this->entityManager()->clear();
+            $campaign = $this->entityManager()->find(Campaign::class, $id);
+            self::assertInstanceOf(Campaign::class, $campaign);
+            self::assertTrue($campaign->isDraft());
+            self::assertSame(0, $campaign->recipientCount);
+            $campaign->audience = $this->seed();
+            $campaign->subject = 'Complete subject';
+            $campaign->bodyMarkdown = 'Complete message';
+            $this->entityManager()->flush();
+            $client->request('POST', '/admin/newsletter/campaign/'.$id.'/send', ['_token' => $this->adminActionToken('send', (int) $id)]);
+            $this->entityManager()->clear();
+            $campaign = $this->entityManager()->find(Campaign::class, $id);
+            self::assertInstanceOf(Campaign::class, $campaign);
+            self::assertTrue($campaign->isScheduled());
+            self::assertSame(0, $campaign->recipientCount);
+            $crawler = $client->request('GET', '/admin/newsletter/campaign/'.$id.'/edit');
+            self::assertSelectorExists('[name="Campaign[scheduledAt]"][disabled]');
+            self::assertSelectorExists('[name="Campaign[editorialStage]"][disabled]');
+        } finally {
+            $this->entityManager()->getConnection()->delete('newsletter_campaign', ['id' => $id]);
+        }
+    }
+
     public function testCampaignMutationsRequirePostAndAValidToken(): void
     {
         $client = $this->loginUser();
@@ -1099,7 +1244,8 @@ final class NewsletterAdminTest extends AbstractAdminTestClass
         $token = $this->adminActionToken('schedule', $id);
 
         $crawler = $client->request(Request::METHOD_GET, '/admin/newsletter/campaign/'.$id);
-        self::assertCount(1, $crawler->filter('form[method="post"][action*="/schedule"]'));
+        self::assertCount(0, $crawler->filter('form[method="post"][action*="/schedule"]'));
+        self::assertCount(1, $crawler->filter('form[method="post"][action*="/send"]'));
 
         $client->request(Request::METHOD_GET, $url);
         self::assertContains($client->getResponse()->getStatusCode(), [Response::HTTP_NOT_FOUND, Response::HTTP_METHOD_NOT_ALLOWED]);

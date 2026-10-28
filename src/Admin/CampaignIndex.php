@@ -8,6 +8,7 @@ use Pushword\Newsletter\Enum\CampaignStatus;
 use Pushword\Newsletter\Event\CampaignIndexItem;
 use Pushword\Newsletter\Event\CollectCampaignIndex;
 use Pushword\Newsletter\Repository\CampaignRepository;
+use Symfony\Component\DependencyInjection\Attribute\Autowire;
 use Symfony\Component\EventDispatcher\EventDispatcherInterface;
 use Symfony\Component\Routing\Generator\UrlGeneratorInterface;
 use Twig\Attribute\AsTwigFunction;
@@ -18,14 +19,16 @@ final readonly class CampaignIndex
         private CampaignRepository $campaigns,
         private UrlGeneratorInterface $urls,
         private EventDispatcherInterface $events,
+        #[Autowire(param: 'pw.newsletter.catalogue_default_host')]
+        private string $defaultHost = '',
     ) {
     }
 
-    /** Without a listener adding another source, the catalogue would only stand in front of the campaign list. */
+    /** Use the catalogue when an application asks for a site filter or adds another source. */
     #[AsTwigFunction('newsletter_campaigns_route')]
     public function route(): string
     {
-        return $this->events->hasListeners(CollectCampaignIndex::class) ? 'admin_newsletter_campaign_catalogue' : 'admin_newsletter_campaign_index';
+        return '' !== $this->defaultHost || $this->events->hasListeners(CollectCampaignIndex::class) ? 'admin_newsletter_campaign_catalogue' : 'admin_newsletter_campaign_index';
     }
 
     public function collect(): CollectCampaignIndex
@@ -43,12 +46,15 @@ final readonly class CampaignIndex
             $index->add(new CampaignIndexItem(
                 source: 'pushword',
                 id: (string) $campaign['id'],
-                subject: $campaign['subject'],
+                subject: '' !== trim($campaign['workingTitle']) ? $campaign['workingTitle'] : $campaign['subject'],
                 status: $campaign['status']->value,
                 scheduledAt: $campaign['scheduledAt'],
                 sentAt: $campaign['sentAt'],
                 actions: $actions,
                 audience: $campaign['audience'],
+                hosts: null === $campaign['mainHost'] || '' === $campaign['mainHost'] ? [] : [$campaign['mainHost']],
+                editorialStage: $campaign['editorialStage']->value,
+                version: null === $campaign['automationId'] ? $campaign['version'] : null,
             ));
         }
 

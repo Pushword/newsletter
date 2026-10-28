@@ -4,15 +4,20 @@ declare(strict_types=1);
 
 namespace Pushword\Newsletter\Tests\Service;
 
+use DateTimeImmutable;
 use LogicException;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Group;
 use Pushword\Newsletter\Entity\Campaign;
 use Pushword\Newsletter\Entity\CampaignRecipient;
 use Pushword\Newsletter\Enum\CampaignStatus;
+use Pushword\Newsletter\Enum\EditorialStage;
 use Pushword\Newsletter\Enum\RecipientState;
+use Pushword\Newsletter\Repository\CampaignRepository;
 use Pushword\Newsletter\Service\BounceSignature;
 use Pushword\Newsletter\Service\CampaignSender;
 use Pushword\Newsletter\Tests\AbstractNewsletterTestCase;
+use Pushword\Newsletter\Validation\CampaignValidationFailed;
 use Symfony\Bundle\FrameworkBundle\Test\MailerAssertionsTrait;
 use Symfony\Component\Mime\Email;
 use Symfony\Component\Mime\Header\IdentificationHeader;
@@ -21,6 +26,80 @@ use Symfony\Component\Mime\Header\IdentificationHeader;
 final class CampaignSenderTest extends AbstractNewsletterTestCase
 {
     use MailerAssertionsTrait;
+
+    public function testDatedDraftsNeverBecomeDueWhateverTheirPreparationStage(): void
+    {
+        $campaign = $this->createCampaign($this->createAudience());
+        $campaign->scheduledAt = new DateTimeImmutable('-1 day');
+        foreach (EditorialStage::cases() as $stage) {
+            $campaign->editorialStage = $stage;
+            $this->entityManager->flush();
+            $due = self::getContainer()->get(CampaignRepository::class)->findDue(new DateTimeImmutable());
+            self::assertNotContains($campaign, $due);
+            self::assertSame([], $this->recipients($campaign));
+        }
+    }
+
+    public function testSendHonorsTheSharedDateAndCancelKeepsItAsAPlan(): void
+    {
+        $campaign = $this->createCampaign($this->createAudience());
+        $date = new DateTimeImmutable('+1 day');
+        $campaign->scheduledAt = $date;
+        self::assertSame(0, $this->sender()->send($campaign));
+        self::assertSame(CampaignStatus::Scheduled, $campaign->status);
+        self::assertSame([], $this->recipients($campaign));
+        $campaign->revertToDraft();
+        self::assertSame($date, $campaign->scheduledAt);
+        self::assertSame(CampaignStatus::Draft, $campaign->status);
+        $campaign->scheduledAt = new DateTimeImmutable('-1 day');
+        $this->sender()->send($campaign);
+        self::assertSame(CampaignStatus::Sending, $campaign->status);
+    }
+
+    #[DataProvider('missingSendContent')]
+    public function testAnIncompleteIdeaCannotBeSentScheduledOrArmed(string $missing): void
+    {
+        $audience = $this->createAudience();
+        $campaign = $this->createCampaign($audience);
+        $campaign->workingTitle = 'Prepare the winter newsletter';
+        match ($missing) {
+            'audience' => $campaign->audience = null,
+            'subject' => $campaign->subject = '',
+            default => $campaign->bodyMarkdown = '',
+        };
+
+        $this->entityManager->flush();
+        foreach (['send', 'schedule', 'arm'] as $method) {
+            try {
+                if ('schedule' === $method) {
+                    $this->sender()->schedule($campaign, new DateTimeImmutable('+1 day'));
+                } else {
+                    match ($method) {
+                        'send' => $this->sender()->send($campaign),
+                        default => $this->sender()->arm($campaign),
+                    };
+                }
+
+                self::fail('Incomplete ideas must not be authorized.');
+            } catch (CampaignValidationFailed $exception) {
+                self::assertContains(('body' === $missing ? 'bodyMarkdown' : $missing).'.missing', array_column($exception->issues, 'code'));
+            }
+
+            self::assertSame(CampaignStatus::Draft, $campaign->status);
+            self::assertSame([], $this->recipients($campaign));
+        }
+
+        $campaign->audience = $audience;
+        $this->entityManager->flush();
+    }
+
+    /** @return iterable<string, array{string}> */
+    public static function missingSendContent(): iterable
+    {
+        yield 'audience' => ['audience'];
+        yield 'subject' => ['subject'];
+        yield 'body' => ['body'];
+    }
 
     private function sender(): CampaignSender
     {
@@ -84,6 +163,8 @@ final class CampaignSenderTest extends AbstractNewsletterTestCase
         $audience = $this->createAudience();
         $this->createContact($audience, 'reader@example.tld');
         $campaign = $this->createCampaign($audience, subject: 'Hello %name%');
+        $campaign->workingTitle = 'Private working title';
+        $campaign->internalNotes = 'Private editorial notes';
         $this->sender()->arm($campaign);
 
         $sent = $this->sender()->drain($campaign, 10);
@@ -97,6 +178,8 @@ final class CampaignSenderTest extends AbstractNewsletterTestCase
         $email = self::getMailerMessage();
         self::assertInstanceOf(Email::class, $email);
         self::assertSame('Hello Test', $email->getSubject());
+        self::assertStringNotContainsString($campaign->workingTitle, (string) $email->getHtmlBody());
+        self::assertStringNotContainsString($campaign->internalNotes, (string) $email->getHtmlBody());
         self::assertStringContainsString('List-Unsubscribe', $email->getHeaders()->toString());
         self::assertStringContainsString('One-Click', $email->getHeaders()->toString());
     }

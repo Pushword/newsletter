@@ -8,9 +8,13 @@ use DateTimeImmutable;
 use DateTimeInterface;
 use Doctrine\ORM\EntityManagerInterface;
 use Exception;
+use LogicException;
 use Pushword\Api\Controller\AbstractApiController;
+use Pushword\Core\Service\EditorialTimezone;
 use Pushword\Newsletter\Entity\Audience;
 use Pushword\Newsletter\Entity\Campaign;
+use Pushword\Newsletter\Enum\EditorialStage;
+use Pushword\Newsletter\Event\CampaignIssue;
 use Pushword\Newsletter\Repository\AudienceRepository;
 use Pushword\Newsletter\Repository\CampaignRepository;
 use Pushword\Newsletter\Repository\ClickEventRepository;
@@ -19,7 +23,10 @@ use Pushword\Newsletter\Segment\SegmentException;
 use Pushword\Newsletter\Segment\SegmentResolver;
 use Pushword\Newsletter\Service\CampaignSender;
 use Pushword\Newsletter\Service\NewsletterMailer;
+use Pushword\Newsletter\Service\SenderProfileRegistry;
 use Pushword\Newsletter\Utm\UtmTag;
+use Pushword\Newsletter\Validation\CampaignPreflight;
+use Pushword\Newsletter\Validation\CampaignValidationFailed;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
@@ -48,6 +55,9 @@ final class CampaignApiController extends AbstractApiController
         private readonly NewsletterMailer $mailer,
         private readonly EntityManagerInterface $entityManager,
         private readonly ValidatorInterface $validator,
+        private readonly EditorialTimezone $timezone,
+        private readonly CampaignPreflight $preflight,
+        private readonly SenderProfileRegistry $senderProfiles,
     ) {
     }
 
@@ -86,13 +96,7 @@ final class CampaignApiController extends AbstractApiController
     {
         $data = $this->decodeJson($request);
 
-        $audience = $this->audienceRepository->findOneBySlug(\is_string($data['audience'] ?? null) ? $data['audience'] : '');
-        if (! $audience instanceof Audience) {
-            return $this->notFound('Audience not found');
-        }
-
         $campaign = new Campaign();
-        $campaign->audience = $audience;
 
         $error = $this->apply($campaign, $data);
         if ($error instanceof JsonResponse) {
@@ -125,6 +129,32 @@ final class CampaignApiController extends AbstractApiController
         };
     }
 
+    #[Route('/api/newsletter/campaign/{id}/duplicate', name: 'pushword_api_newsletter_campaign_duplicate', requirements: ['id' => '\d+'], methods: ['POST'])]
+    public function duplicate(int $id): JsonResponse
+    {
+        $original = $this->campaignRepository->find($id);
+        if (! $original instanceof Campaign) {
+            return $this->notFound('Campaign not found');
+        }
+
+        $copy = $original->duplicate();
+        $this->entityManager->persist($copy);
+        $this->entityManager->flush();
+
+        return $this->respond($this->toArray($copy), Response::HTTP_CREATED);
+    }
+
+    #[Route('/api/newsletter/campaign/{id}/check', name: 'pushword_api_newsletter_campaign_check', requirements: ['id' => '\d+'], methods: ['GET'])]
+    public function check(int $id): JsonResponse
+    {
+        $campaign = $this->campaignRepository->find($id);
+        if (! $campaign instanceof Campaign) {
+            return $this->notFound('Campaign not found');
+        }
+
+        return $this->respond(['issues' => array_map(static fn (CampaignIssue $issue): array => $issue->toArray(), $this->preflight->check($campaign))]);
+    }
+
     #[Route('/api/newsletter/campaign/{id}/schedule', name: 'pushword_api_newsletter_campaign_schedule', requirements: ['id' => '\d+'], methods: ['POST'])]
     public function schedule(int $id, Request $request): JsonResponse
     {
@@ -144,8 +174,13 @@ final class CampaignApiController extends AbstractApiController
             return $this->badRequest('Missing or invalid scheduledAt');
         }
 
-        $campaign->schedule($when);
-        $this->entityManager->flush();
+        try {
+            $this->campaignSender->schedule($campaign, $when);
+        } catch (CampaignValidationFailed $failure) {
+            return $this->respond(['issues' => array_map(static fn (CampaignIssue $issue): array => $issue->toArray(), $failure->issues)], Response::HTTP_UNPROCESSABLE_ENTITY);
+        } catch (LogicException $logicException) {
+            return $this->badRequest($logicException->getMessage());
+        }
 
         return $this->respond($this->toArray($campaign));
     }
@@ -162,7 +197,13 @@ final class CampaignApiController extends AbstractApiController
             return $this->badRequest('Campaign is '.$campaign->getStatusLabel());
         }
 
-        $this->campaignSender->arm($campaign);
+        try {
+            $this->campaignSender->send($campaign);
+        } catch (CampaignValidationFailed $failure) {
+            return $this->respond(['issues' => array_map(static fn (CampaignIssue $issue): array => $issue->toArray(), $failure->issues)], Response::HTTP_UNPROCESSABLE_ENTITY);
+        } catch (LogicException $logicException) {
+            return $this->badRequest($logicException->getMessage());
+        }
 
         return $this->respond($this->toArray($campaign));
     }
@@ -198,7 +239,7 @@ final class CampaignApiController extends AbstractApiController
             }
 
             try {
-                $this->mailer->sendTest($audience, $content['subject'], $content['bodyMarkdown'], $content['preheader'], $address, UtmTag::forCampaign($campaign), $locale, $campaign->isTransactional(), $campaign->emailLayout);
+                $this->mailer->sendTest($audience, $content['subject'], $content['bodyMarkdown'], $content['preheader'], $address, UtmTag::forCampaign($campaign), $locale, $campaign->isTransactional(), $campaign->emailLayout, $this->senderProfiles->resolve($campaign));
                 $sent[] = $address;
             } catch (Throwable $throwable) {
                 $failed[] = $address.' ('.$throwable->getMessage().')';
@@ -244,6 +285,48 @@ final class CampaignApiController extends AbstractApiController
      */
     private function apply(Campaign $campaign, array $data): ?JsonResponse
     {
+        foreach (['workingTitle', 'internalNotes'] as $field) {
+            if (isset($data[$field]) && \is_string($data[$field])) {
+                $campaign->{$field} = $data[$field];
+            }
+        }
+
+        if (\array_key_exists('audience', $data)) {
+            $audience = \is_string($data['audience']) ? $this->audienceRepository->findOneBySlug($data['audience']) : null;
+            if (null !== $data['audience'] && ! $audience instanceof Audience) {
+                return $this->notFound('Audience not found');
+            }
+
+            $campaign->audience = $audience;
+        }
+
+        if (\array_key_exists('senderProfile', $data)) {
+            $profile = $data['senderProfile'];
+            if (null !== $profile && ! \in_array($profile, $this->senderProfiles->choices(), true)) {
+                return $this->badRequest('Unknown sender profile');
+            }
+
+            $campaign->senderProfile = \is_string($profile) ? $profile : null;
+        }
+
+        if (\array_key_exists('editorialStage', $data)) {
+            $stage = \is_string($data['editorialStage']) ? EditorialStage::tryFrom($data['editorialStage']) : null;
+            if (null === $stage) {
+                return $this->badRequest('Invalid editorialStage');
+            }
+
+            $campaign->editorialStage = $stage;
+        }
+
+        if (\array_key_exists('scheduledAt', $data)) {
+            $when = \is_string($data['scheduledAt']) ? $this->parseDate($data['scheduledAt']) : null;
+            if (null !== $data['scheduledAt'] && ! $when instanceof DateTimeImmutable) {
+                return $this->badRequest('Invalid scheduledAt');
+            }
+
+            $campaign->scheduledAt = $when;
+        }
+
         if (\array_key_exists('subject', $data) && \is_string($data['subject'])) {
             $campaign->subject = $data['subject'];
         }
@@ -294,7 +377,7 @@ final class CampaignApiController extends AbstractApiController
         }
 
         try {
-            return new DateTimeImmutable($value);
+            return DateTimeImmutable::createFromMutable($this->timezone->parse($value));
         } catch (Exception) {
             return null;
         }
@@ -309,12 +392,17 @@ final class CampaignApiController extends AbstractApiController
             'id' => $campaign->id,
             'audience' => $audience?->slug,
             'subject' => $campaign->subject,
+            'senderProfile' => $campaign->senderProfile,
+            'workingTitle' => $campaign->workingTitle,
+            'internalNotes' => $campaign->internalNotes,
+            'editorialStage' => $campaign->editorialStage->value,
             'slug' => $campaign->slug,
             'preheader' => $campaign->preheader,
             'bodyMarkdown' => $campaign->bodyMarkdown,
             'translations' => $campaign->translations,
             'segment' => $campaign->segment,
             'status' => $campaign->getStatusLabel(),
+            'sendIssues' => $campaign->sendIssues,
             'rateSeconds' => $campaign->getEffectiveRateSeconds(),
             'transactional' => $campaign->isTransactional(),
             'scheduledAt' => $campaign->scheduledAt?->format(DateTimeInterface::ATOM),
@@ -368,13 +456,21 @@ final class CampaignApiController extends AbstractApiController
                     'patch' => ['summary' => 'Update a draft campaign', 'responses' => ['200' => ['description' => 'OK']]],
                     'delete' => ['summary' => 'Delete a campaign', 'responses' => ['204' => ['description' => 'Deleted']]],
                 ],
+                '/api/newsletter/campaign/{id}/duplicate' => [
+                    'parameters' => [['name' => 'id', 'in' => 'path', 'required' => true, 'schema' => ['type' => 'integer']]],
+                    'post' => ['summary' => 'Copy authored settings into a new draft with independent delivery and tracking identity', 'responses' => ['201' => ['description' => 'Created'], '404' => ['description' => 'Campaign not found']]],
+                ],
+                '/api/newsletter/campaign/{id}/check' => [
+                    'parameters' => [['name' => 'id', 'in' => 'path', 'required' => true, 'schema' => ['type' => 'integer']]],
+                    'get' => ['summary' => 'Run shared preflight checks without sending; returns issues with code, message, field, severity, locale and block', 'responses' => ['200' => ['description' => 'Check report']]],
+                ],
                 '/api/newsletter/campaign/{id}/schedule' => [
                     'parameters' => [['name' => 'id', 'in' => 'path', 'required' => true, 'schema' => ['type' => 'integer']]],
-                    'post' => ['summary' => 'Arm a draft for a date', 'responses' => ['200' => ['description' => 'OK']]],
+                    'post' => ['summary' => 'Arm a draft for a date', 'responses' => ['200' => ['description' => 'OK'], '422' => ['description' => 'Preflight blocked; issues explain corrections']]],
                 ],
                 '/api/newsletter/campaign/{id}/send' => [
                     'parameters' => [['name' => 'id', 'in' => 'path', 'required' => true, 'schema' => ['type' => 'integer']]],
-                    'post' => ['summary' => 'Freeze recipients and open the send; mails go out from pw:newsletter:tick', 'responses' => ['200' => ['description' => 'OK']]],
+                    'post' => ['summary' => 'Authorize delivery: schedule at a future scheduledAt, otherwise start now; the tick delivers', 'responses' => ['200' => ['description' => 'OK'], '422' => ['description' => 'Preflight blocked; issues explain corrections']]],
                 ],
                 '/api/newsletter/campaign/{id}/test' => [
                     'parameters' => [['name' => 'id', 'in' => 'path', 'required' => true, 'schema' => ['type' => 'integer']]],
@@ -386,8 +482,13 @@ final class CampaignApiController extends AbstractApiController
                     'NewsletterCampaign' => [
                         'type' => 'object',
                         'properties' => [
-                            'audience' => ['type' => 'string'],
+                            'audience' => ['type' => 'string', 'nullable' => true],
+                            'senderProfile' => ['type' => 'string', 'nullable' => true, 'description' => 'Configured sender profile id, or null to inherit the audience'],
+                            'scheduledAt' => ['type' => 'string', 'format' => 'date-time', 'nullable' => true, 'description' => 'Planned date until Send explicitly authorizes delivery'],
                             'subject' => ['type' => 'string'],
+                            'workingTitle' => ['type' => 'string', 'description' => 'Internal title; either this or subject is required to save a draft'],
+                            'internalNotes' => ['type' => 'string', 'description' => 'Private preparation notes, never rendered in mail'],
+                            'editorialStage' => ['type' => 'string', 'enum' => ['draft', 'review', 'ready'], 'description' => 'Optional preparation labels; never authorize sending'],
                             'slug' => ['type' => 'string', 'description' => 'utm_campaign value; derived from the subject when omitted'],
                             'preheader' => ['type' => 'string'],
                             'bodyMarkdown' => ['type' => 'string'],

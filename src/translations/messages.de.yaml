@@ -73,15 +73,49 @@ newsletter:
     status:
       active: "Aktiv"
       paused: "Pausiert"
+  block:
+    content: "Inhalt (Markdown)"
+    empty: "Keine passenden Inhalte."
+    failed: "Der Inhalt konnte nicht geladen werden."
+    help: "Kombinieren Sie Text, Bilder, Links, Zitate oder eine Signatur. Beim Einfügen entsteht eine unabhängige, bearbeitbare Kopie."
+    library: "Bibliothek"
+    loading: "Wird geladen…"
+    name: "Name des Blocks"
+    nameRequired: "Geben Sie einen Namen und Inhalt ein."
+    plural: "Wiederverwendbare Blöcke"
+    refresh: "Aus Quelle aktualisieren"
+    replace: "Diesen Block durch die aktuelle Quelle ersetzen? Ihre Änderungen an dieser Kopie werden ersetzt."
+    save: "Kopie in der Bibliothek speichern"
+    saved: "Kopie in der Bibliothek gespeichert."
+    search: "Suchen"
+    singular: "Wiederverwendbarer Block"
+    source: "Quelle"
+  calendar:
+    agenda: "Agenda"
+    conflict: "Dieser Newsletter wurde geändert. Laden Sie die Seite vor dem Verschieben neu."
+    empty: "Keine Newsletter in diesem Zeitraum."
+    error: "Das Datum konnte nicht gespeichert werden. Das vorherige Datum wurde wiederhergestellt."
+    help: "Verschieben Sie einen Entwurf oder öffnen Sie ihn, um das Datum im Formular zu ändern. Nur Senden gibt den Versand frei. Geplante, versendete und externe Newsletter sind hier schreibgeschützt."
+    javascript: "Aktivieren Sie JavaScript für den Kalender oder verwenden Sie die Liste."
+    list: "Liste"
+    month: "Monat"
+    noUndated: "Alle Newsletter haben ein Datum."
+    saved: "Datum gespeichert. Dieser Newsletter bleibt ein Entwurf."
+    scheduled: "Der Versand ist für das gewählte Datum freigegeben."
+    title: "Kalender"
+    undated: "Ohne Datum"
+    views: "Newsletter-Ansichten"
+    week: "Woche"
+    year: "Jahr"
   campaign:
     action:
       cancelSchedule: "Planung aufheben"
       create: "Newsletter erstellen"
+      duplicate: Als Entwurf duplizieren
       previewSegment: "Empfänger zählen"
       recipients: "Empfänger"
       review: "Prüfen und senden"
       saveDraft: "Entwurf speichern"
-      schedule: "Planen"
       send: "Senden"
       sendTest: "Test senden"
     design:
@@ -92,7 +126,7 @@ newsletter:
       empty: "Wählen Sie eine Zielgruppe, um das verwendete E-Mail-Design zu sehen."
       inherit: "Design der Zielgruppe verwenden"
       label: "Design dieser Kampagne"
-      personal: "Nur Servicenachrichten: Inhalt und Signatur von „%audience%“, ohne Abmeldelink oder Abmelde-Header."
+      personal: "Inhalt und Signatur von „%audience%“. Marketingnachrichten behalten ihren Abmeldelink."
       personalCustomize: "Signatur anpassen"
       personalEdit: "Signatur der Zielgruppe bearbeiten (neuer Tab)"
       personalWarning: "Signaturänderungen gelten für alle persönlichen E-Mails an diese Zielgruppe."
@@ -102,6 +136,7 @@ newsletter:
     field:
       audience: "Zielgruppe"
       body: "Inhalt"
+      body.help: "Personalisieren mit %firstName|zusammen%, %name% oder %email%. Der Text nach | wird verwendet, wenn der Vorname fehlt."
       bounced: "Rückläufer"
       clicks: "Klicks"
       failed: "Fehlgeschlagen"
@@ -111,7 +146,7 @@ newsletter:
       rateSeconds.help: "Sekunden zwischen zwei E-Mails. Leer lassen, um den Takt der Zielgruppe zu verwenden."
       recipients: "Empfänger"
       scheduledAt: "Geplant für"
-      scheduledAt.help: "Optional. Bestätigen Sie nach dem Speichern mit „Planen“ den Versand zu diesem Datum."
+      scheduledAt.help: "Optional. Das Datum gibt keinen Versand frei. Nach dem Speichern auf Senden klicken: Ein zukünftiges Datum plant den Versand, ein vergangenes oder leeres Datum startet ihn sofort."
       segment: "Segment"
       segment.help: "An wen dieser Newsletter geht. Ohne Bedingung an die gesamte abonnierte Zielgruppe; „Als Text bearbeiten“ zeigt das gespeicherte JSON."
       sendDate: "Versanddatum"
@@ -134,7 +169,7 @@ newsletter:
       languages: "Übersetzungen"
       performance: "Versandergebnisse"
       schedule: "4. Versand vorbereiten"
-      scheduleHelp: "Speichern Sie Ihren Entwurf, senden Sie einen Test und versenden oder planen Sie den Newsletter dann auf seiner Detailseite."
+      scheduleHelp: "Entwurf speichern und einen Test senden. Nur Senden gibt den Versand zum gewählten Datum oder sofort frei."
     flash:
       backToDraft: "Planung aufgehoben – wieder ein Entwurf."
       invalidToken: "Ungültiges Token, bitte erneut versuchen."
@@ -179,10 +214,12 @@ newsletter:
       invalidLocale: "Die Übersetzung „%locale%“ muss ein Objekt mit subject, preheader und bodyMarkdown sein."
   catalogue:
     actions: Aktionen
+    browseBySite: Nach Website filtern
     createNative: In Pushword erstellen
     emptyHelp: 'Wählen Sie ein Werkzeug, um eine Kampagne zu erstellen. Verfügbare Kampagnen erscheinen hier.'
     emptyTitle: 'Keine Kampagnen verfügbar'
     filters: Kampagnen filtern
+    host: Website
     manageNative: In Pushword verwalten
     noResultsHelp: 'Versuchen Sie eine andere Suche oder setzen Sie die Filter zurück.'
     noResultsTitle: 'Keine passenden Kampagnen'
@@ -192,6 +229,7 @@ newsletter:
     source: Quelle
     timezone: Zeiten in %timezone%.
     unknown: Nicht angegeben
+    unknownHost: Unbekannte Website
   confirm:
     body: "Vielen Dank für Ihre Anmeldung! Bitte bestätigen Sie unten Ihre E-Mail-Adresse, um unsere E-Mails zu erhalten."
     button: "Anmeldung bestätigen"
@@ -346,7 +384,7 @@ newsletter:
     mobile: "Mobil"
     otherTemplates: "Weitere Vorlagen"
     personal: Persönliche E-Mail
-    personalHelp: "Inhalt und Signatur ohne Abmeldung. Nur für Servicenachrichten."
+    personalHelp: "Inhalt und Signatur. Marketingnachrichten behalten ihren Abmeldelink."
     personalSignature: "Signatur für persönliche E-Mails"
     preview: "Live-Vorschau"
     previewHelp: "Dies ist nur eine Vorschau, es wird keine E-Mail gesendet. E-Mail-Programme können sie anders darstellen."
@@ -380,6 +418,15 @@ newsletter:
     view: "Design-Arbeitsbereich"
     viewport: "Vorschaubreite in Pixeln"
     wrapped: "Mit Rahmen"
+  editorial:
+    draft: "Entwurf"
+    internalNotes: "Interne Notizen"
+    preparation: "Vorbereitung"
+    ready: "Bereit"
+    review: "Zu prüfen"
+    stage: "Vorbereitungsstand"
+    titleRequired: "Geben Sie einen Arbeitstitel oder einen E-Mail-Betreff ein."
+    workingTitle: "Arbeitstitel"
   email:
     unsubscribe: Abmelden
   form:
@@ -403,6 +450,24 @@ newsletter:
   resubscribed:
     body: "Sie erhalten wieder E-Mails von %audience%."
     title: "Wieder angemeldet"
+  preflight:
+    audienceMissing: "Wählen Sie eine Zielgruppe."
+    blockUnavailable: "Dieser Block oder seine Quelle ist nicht verfügbar."
+    blocked: "Der Versand wurde blockiert. Beheben Sie die Fehler und wählen Sie erneut Senden."
+    bodyMarkdownMissing: "Schreiben Sie die Nachricht."
+    error: "Erforderlich"
+    linkInvalid: "Ein Link hat ein leeres oder nicht unterstütztes Ziel."
+    passed: "Keine blockierenden Fehler gefunden. Die Prüfung wird beim Versandstart wiederholt."
+    renderFailed: "Die Nachricht konnte nicht dargestellt werden. Prüfen Sie Inhalt und Gestaltung."
+    senderInvalid: "Wählen Sie ein verfügbares Absenderprofil."
+    subjectLong: "Der Betreff überschreitet 80 Zeichen und könnte im Posteingang abgeschnitten werden."
+    subjectMissing: "Schreiben Sie den Betreff."
+    title: "Vor dem Versand"
+    unsubscribeMissing: "In dieser Marketingnachricht fehlt der Abmeldelink."
+    warning: "Empfehlung"
+  sender:
+    inherit: "Absender der Zielgruppe verwenden"
+    label: "Absenderprofil"
   statistics:
     aboutActivity: "Über diese Ereignisse"
     aboutContacts: "Über diese Kontaktzahlen"
@@ -614,6 +679,8 @@ newsletter:
     campaignrecipientEmptyTitle: "Der Versand hat noch nicht begonnen"
     contactEmptyHint: "Melden Sie einen Kontakt bei einer Zielgruppe an, um Ihre Verteilerliste aufzubauen."
     contactEmptyTitle: "Lernen Sie Ihre Abonnenten kennen"
+    emailblockEmptyHint: "Speichern Sie häufig verwendete Inhalte und fügen Sie eine bearbeitbare Kopie in Ihre Newsletter ein."
+    emailblockEmptyTitle: "Erstellen Sie Ihren ersten wiederverwendbaren Baustein"
     emailtemplateEmptyHint: "Benennen Sie Ihr Design, fügen Sie Kopf- und Fußzeile hinzu und wählen Sie es dann in einem Newsletter aus."
     emailtemplateEmptyTitle: "Erstellen Sie Ihre erste eigene Vorlage"
     filterAll: "Alle"
@@ -630,7 +697,7 @@ newsletterHelpIdentifier: "E-Mail oder Telefon erforderlich. Ohne E-Mail-Adresse
 newsletterHelpMoveSubscription: "Eine Änderung verschiebt das Abonnement."
 newsletterHelpPhone: "Ohne E-Mail-Adresse erhält dieser Kontakt keine E-Mails."
 newsletterHelpRates: "Raten beziehen sich auf gesendete E-Mails."
-newsletterHelpSchedule: "Speichern Sie den Entwurf und bestätigen Sie dann mit „Planen“."
+newsletterHelpSchedule: "Entwurf speichern, dann den Versand mit „Senden“ freigeben."
 newsletterHelpSharedTemplate: "Änderungen gelten für alle Zielgruppen und Kampagnen, die diese Vorlage verwenden."
 newsletterHelpTransactional: "Keine Abmeldelinks oder -Header. Nur Servicenachrichten."
 newsletterHelpUtmSource: "Leer lassen, um Links unverändert zu lassen."

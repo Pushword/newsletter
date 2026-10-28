@@ -73,15 +73,49 @@ newsletter:
     status:
       active: "Attiva"
       paused: "In pausa"
+  block:
+    content: "Contenuto (Markdown)"
+    empty: "Nessun contenuto corrispondente."
+    failed: "Impossibile caricare il contenuto."
+    help: "Combina testo, immagini, link, citazioni o firma. Ogni inserimento crea una copia indipendente e modificabile."
+    library: "Libreria"
+    loading: "Caricamento…"
+    name: "Nome del blocco"
+    nameRequired: "Inserisci un nome e un contenuto."
+    plural: "Blocchi riutilizzabili"
+    refresh: "Aggiorna dalla fonte"
+    replace: "Sostituire questo blocco con la fonte attuale? Le modifiche a questa copia saranno sostituite."
+    save: "Salva una copia nella libreria"
+    saved: "Copia salvata nella libreria."
+    search: "Cerca"
+    singular: "Blocco riutilizzabile"
+    source: "Fonte"
+  calendar:
+    agenda: "Agenda"
+    conflict: "Questa newsletter è stata modificata. Ricarica la pagina prima di spostarla."
+    empty: "Nessuna newsletter in questo periodo."
+    error: "Impossibile salvare la data. La data precedente è stata ripristinata."
+    help: "Trascina una bozza o aprila per modificare la data nel modulo. Solo Invia autorizza l’invio. Le newsletter programmate, inviate ed esterne sono in sola lettura qui."
+    javascript: "Attiva JavaScript per il calendario o usa l’elenco."
+    list: "Elenco"
+    month: "Mese"
+    noUndated: "Tutte le newsletter hanno una data."
+    saved: "Data salvata. Questa newsletter resta una bozza."
+    scheduled: "Invio autorizzato per la data scelta."
+    title: "Calendario"
+    undated: "Senza data"
+    views: "Viste newsletter"
+    week: "Settimana"
+    year: "Anno"
   campaign:
     action:
       cancelSchedule: "Annulla la programmazione"
       create: "Crea newsletter"
+      duplicate: Duplica come bozza
       previewSegment: "Conta il pubblico"
       recipients: "Destinatari"
       review: "Verifica e invia"
       saveDraft: "Salva bozza"
-      schedule: "Programma"
       send: "Invia"
       sendTest: "Invia un test"
     design:
@@ -92,7 +126,7 @@ newsletter:
       empty: "Scegli un pubblico per vedere la grafica email in uso."
       inherit: "Usa la grafica del pubblico"
       label: "Grafica di questa campagna"
-      personal: "Solo messaggi di servizio: contenuto e firma di « %audience% », senza link o intestazioni di disiscrizione."
+      personal: "Contenuto e firma di « %audience% ». I messaggi promozionali mantengono il link di disiscrizione."
       personalCustomize: "Personalizza la firma"
       personalEdit: "Modifica la firma del pubblico (nuova scheda)"
       personalWarning: "Le modifiche alla firma si applicano a tutte le email personali inviate a questo pubblico."
@@ -102,6 +136,7 @@ newsletter:
     field:
       audience: "Pubblico"
       body: "Contenuto"
+      body.help: "Personalizza con %firstName|a tutti%, %name% o %email%. Il testo dopo | sostituisce il nome mancante."
       bounced: "Rimbalzi"
       clicks: "Clic"
       failed: "Falliti"
@@ -111,7 +146,7 @@ newsletter:
       rateSeconds.help: "Secondi tra due email. Lascia vuoto per usare la cadenza del pubblico."
       recipients: "Destinatari"
       scheduledAt: "Programmata per"
-      scheduledAt.help: "Facoltativo. Dopo il salvataggio, usa «Programma» per confermare l’invio in questa data."
+      scheduledAt.help: "Facoltativa. Questa data non autorizza l’invio. Dopo il salvataggio, usa Invia: una data futura programma l’invio; una data passata o vuota lo avvia subito."
       segment: "Segmento"
       segment.help: "A chi va questa newsletter. Senza condizioni, a tutto il pubblico iscritto; «Modifica come testo» mostra il JSON salvato."
       sendDate: "Data di invio"
@@ -134,7 +169,7 @@ newsletter:
       languages: "Traduzioni"
       performance: "Risultati dell’invio"
       schedule: "4. Prepara l’invio"
-      scheduleHelp: "Salva la bozza, invia un test, poi invia o programma dalla scheda della newsletter."
+      scheduleHelp: "Salva la bozza e invia un test. Solo Invia autorizza l’invio alla data scelta o immediatamente."
     flash:
       backToDraft: "Programmazione annullata — di nuovo in bozza."
       invalidToken: "Token non valido, riprova."
@@ -179,10 +214,12 @@ newsletter:
       invalidLocale: "La traduzione «%locale%» deve essere un oggetto con subject, preheader e bodyMarkdown."
   catalogue:
     actions: Azioni
+    browseBySite: Filtra per sito
     createNative: Crea in Pushword
     emptyHelp: 'Scegli uno strumento per creare una campagna. Le campagne disponibili appariranno qui.'
     emptyTitle: 'Nessuna campagna disponibile'
     filters: Filtra le campagne
+    host: Sito
     manageNative: Gestisci in Pushword
     noResultsHelp: 'Prova una ricerca diversa o reimposta i filtri per vedere le campagne disponibili.'
     noResultsTitle: 'Nessuna campagna corrispondente'
@@ -192,6 +229,7 @@ newsletter:
     source: Fonte
     timezone: Orari nel fuso %timezone%.
     unknown: Non disponibile
+    unknownHost: Sito sconosciuto
   confirm:
     body: "Grazie per l’iscrizione! Per iniziare a ricevere le nostre email, conferma il tuo indirizzo qui sotto."
     button: "Confermo l’iscrizione"
@@ -346,7 +384,7 @@ newsletter:
     mobile: "Mobile"
     otherTemplates: "Altri modelli"
     personal: Email personale
-    personalHelp: "Contenuto e firma senza disiscrizione. Solo messaggi di servizio."
+    personalHelp: "Contenuto e firma. I messaggi promozionali mantengono il link di disiscrizione."
     personalSignature: "Firma delle email personali"
     preview: "Anteprima dal vivo"
     previewHelp: "Questa è un’anteprima: nessuna email viene inviata. I client di posta possono mostrarla in modo diverso."
@@ -380,6 +418,15 @@ newsletter:
     view: "Area di lavoro della grafica"
     viewport: "Larghezza dell’anteprima in pixel"
     wrapped: "Con cornice"
+  editorial:
+    draft: "Bozza"
+    internalNotes: "Note interne"
+    preparation: "Preparazione"
+    ready: "Pronta"
+    review: "Da verificare"
+    stage: "Fase di preparazione"
+    titleRequired: "Inserisci un titolo di lavoro o un oggetto email."
+    workingTitle: "Titolo di lavoro"
   email:
     unsubscribe: Annulla iscrizione
   form:
@@ -403,6 +450,24 @@ newsletter:
   resubscribed:
     body: "Riceverai di nuovo le email di %audience%."
     title: "Iscrizione riattivata"
+  preflight:
+    audienceMissing: "Scegli un pubblico."
+    blockUnavailable: "Questo blocco o la sua fonte non è disponibile."
+    blocked: "Invio bloccato. Correggi gli errori e scegli nuovamente Invia."
+    bodyMarkdownMissing: "Scrivi il messaggio."
+    error: "Da correggere"
+    linkInvalid: "Un link ha una destinazione vuota o non supportata."
+    passed: "Nessun errore bloccante. I controlli saranno ripetuti all’inizio dell’invio."
+    renderFailed: "Impossibile generare il messaggio. Verifica contenuto e grafica."
+    senderInvalid: "Scegli un profilo mittente disponibile."
+    subjectLong: "L’oggetto supera 80 caratteri e potrebbe essere troncato nella posta in arrivo."
+    subjectMissing: "Scrivi l’oggetto."
+    title: "Prima dell’invio"
+    unsubscribeMissing: "Manca il link di disiscrizione nel messaggio promozionale."
+    warning: "Suggerimento"
+  sender:
+    inherit: "Usa il mittente del pubblico"
+    label: "Profilo mittente"
   statistics:
     aboutActivity: "Informazioni sugli eventi"
     aboutContacts: "Informazioni sul conteggio"
@@ -614,6 +679,8 @@ newsletter:
     campaignrecipientEmptyTitle: "L’invio non è ancora iniziato"
     contactEmptyHint: "Iscrivi un contatto a un pubblico per iniziare a costruire la tua lista."
     contactEmptyTitle: "Conosci i tuoi iscritti"
+    emailblockEmptyHint: "Salva i contenuti che usi spesso, poi inserisci una copia modificabile nelle tue newsletter."
+    emailblockEmptyTitle: "Crea il tuo primo blocco riutilizzabile"
     emailtemplateEmptyHint: "Dai un nome al modello, aggiungi un’intestazione e un piè di pagina, poi sceglilo in una newsletter."
     emailtemplateEmptyTitle: "Crea il tuo primo modello personalizzato"
     filterAll: "Tutti"
@@ -630,7 +697,7 @@ newsletterHelpIdentifier: "Email o telefono obbligatori. Senza indirizzo email, 
 newsletterHelpMoveSubscription: "Modificarlo sposta l’iscrizione."
 newsletterHelpPhone: "Senza indirizzo email, questo contatto non riceve email."
 newsletterHelpRates: "Tassi calcolati sulle email inviate."
-newsletterHelpSchedule: "Salva la bozza, poi conferma con «Programma»."
+newsletterHelpSchedule: "Salva la bozza, poi usa «Invia» per autorizzare l’invio."
 newsletterHelpSharedTemplate: "Le modifiche si applicano a tutti i pubblici e a tutte le campagne che usano questo modello."
 newsletterHelpTransactional: "Nessun link né intestazione di disiscrizione. Solo messaggi di servizio."
 newsletterHelpUtmSource: "Lascia vuoto per mantenere i link invariati."

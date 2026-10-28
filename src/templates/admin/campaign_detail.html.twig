@@ -16,12 +16,12 @@
 {% endblock %}
 
 {% block content_title %}
-  {{ campaign.subject }}
+  {{ campaign.title }}
   <span class="badge badge-{{ {draft: 'secondary', scheduled: 'info', sending: 'warning', sent: 'success'}[campaign.status.value] }} pw-campaign-status">{{ ('newsletter.campaign.review.status.' ~ campaign.status.value)|trans }}</span>
 {% endblock %}
 
 {% block page_actions %}
-  {% set secondary = ['delete', 'previewSegment', 'index'] %}
+  {% set secondary = ['delete', 'duplicate', 'previewSegment', 'index'] %}
   {% for action in entity.actions|reverse|filter(action => action.name not in secondary) %}
     {{ include(action.templatePath, {action: action, entity: entity}, with_context: false) }}
   {% endfor %}
@@ -39,6 +39,24 @@
 {% endblock %}
 
 {% block main %}
+  {% if campaign.isDraft or campaign.isScheduled %}
+    <section class="pw-campaign-preflight alert {{ preflight_issues|filter(issue => issue.severity == 'error') is empty ? 'alert-info' : 'alert-warning' }}" aria-labelledby="campaign-preflight-title">
+      <h2 class="h6" id="campaign-preflight-title">{{ 'newsletter.preflight.title'|trans }}</h2>
+      {% if campaign.sendIssues is not empty %}<p>{{ 'newsletter.preflight.blocked'|trans }}</p>{% endif %}
+      {% if preflight_issues is empty %}
+        <p class="mb-0">{{ 'newsletter.preflight.passed'|trans }}</p>
+      {% else %}
+        <ul class="mb-0">
+          {% for issue in preflight_issues %}
+            <li data-preflight-code="{{ issue.code }}">
+              <i class="fa {{ issue.severity == 'error' ? 'fa-circle-exclamation' : 'fa-circle-info' }}" aria-hidden="true"></i>
+              <span><strong>{{ ('newsletter.preflight.' ~ issue.severity)|trans }}</strong> — {{ issue.message|trans }}{% if issue.locale %} ({{ issue.locale }}){% endif %}{% if issue.block %} · {{ issue.block }}{% endif %}</span>
+            </li>
+          {% endfor %}
+        </ul>
+      {% endif %}
+    </section>
+  {% endif %}
   <div class="pw-campaign-review">
     <div class="pw-campaign-message">
       {% if campaign.preheader %}
@@ -68,7 +86,7 @@
       <aside class="pw-campaign-summary" aria-labelledby="campaign-summary-title">
         <h2 id="campaign-summary-title">{{ 'newsletter.campaign.review.summary'|trans }}</h2>
         <dl>
-          {% for property in ['audience', 'scheduledAt', 'sentAt'] %}
+          {% for property in ['audience', 'senderProfile', 'editorialStage', 'scheduledAt', 'sentAt'] %}
             {% set field = entity.fields.getByProperty(property) %}
             {% if field.value is not null %}
               <div><dt>{{ field.label|trans }}</dt><dd>{{ include(field.templatePath, {field: field, entity: entity}, with_context: false) }}</dd></div>

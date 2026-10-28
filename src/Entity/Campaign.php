@@ -12,6 +12,8 @@ use Pushword\Core\Entity\SharedTrait\IdInterface;
 use Pushword\Core\Entity\SharedTrait\IdTrait;
 use Pushword\Core\Entity\SharedTrait\TimestampableTrait;
 use Pushword\Newsletter\Enum\CampaignStatus;
+use Pushword\Newsletter\Enum\EditorialStage;
+use Pushword\Newsletter\Event\CampaignIssue;
 use Pushword\Newsletter\Repository\CampaignRepository;
 use Pushword\Newsletter\Segment\SegmentCriteria;
 use Pushword\Newsletter\Segment\SegmentException;
@@ -45,7 +47,7 @@ class Campaign implements IdInterface, Stringable
     /** @var list<string> what a translation may carry, each falling back on its own */
     private const array TRANSLATED_FIELDS = ['subject', 'preheader', 'bodyMarkdown'];
 
-    #[Assert\NotNull]
+    #[Assert\When(expression: '!this.isDraft()', constraints: [new Assert\NotNull()])]
     #[ORM\ManyToOne(targetEntity: Audience::class)]
     #[ORM\JoinColumn(nullable: true, onDelete: 'CASCADE')]
     public ?Audience $audience = null;
@@ -56,9 +58,44 @@ class Campaign implements IdInterface, Stringable
         set(?string $value) => '' === $value ? null : $value;
     }
 
-    #[Assert\NotBlank]
+    #[ORM\Column(type: Types::STRING, length: 128, nullable: true)]
+    public ?string $senderProfile = null {
+        set(?string $value) => '' === $value ? null : $value;
+    }
+
+    #[Assert\When(expression: '!this.isDraft()', constraints: [new Assert\NotBlank()])]
     #[ORM\Column(type: Types::STRING, length: 255)]
-    public string $subject = '';
+    public string $subject = '' {
+        set(?string $value) => (string) $value;
+    }
+
+    #[ORM\Column(type: Types::STRING, length: 255, options: ['default' => ''])]
+    public string $workingTitle = '' {
+        set(?string $value) => (string) $value;
+    }
+
+    /** Private editorial text, never passed to the renderer or tracking identity. */
+    #[ORM\Column(type: Types::TEXT, options: ['default' => ''])]
+    public string $internalNotes = '' {
+        set(?string $value) => (string) $value;
+    }
+
+    #[ORM\Column(type: Types::STRING, length: 20, enumType: EditorialStage::class, options: ['default' => 'draft'])]
+    public EditorialStage $editorialStage = EditorialStage::Draft;
+
+    /** @var list<array{code: string, message: string, field: string, severity: string, locale: ?string, block: ?string}> */
+    #[ORM\Column(type: Types::JSON, options: ['default' => '[]'])]
+    public private(set) array $sendIssues = [];
+
+    /** @param list<CampaignIssue> $issues */
+    public function recordSendIssues(array $issues): void
+    {
+        $this->sendIssues = array_map(static fn (CampaignIssue $issue): array => $issue->toArray(), $issues);
+    }
+
+    #[ORM\Version]
+    #[ORM\Column(type: Types::INTEGER, options: ['default' => 1])]
+    public private(set) int $version = 1;
 
     /**
      * The campaign's analytics identity, carried as `utm_campaign`. Derived from
@@ -76,6 +113,7 @@ class Campaign implements IdInterface, Stringable
     #[ORM\Column(type: Types::STRING, length: 255, nullable: true)]
     public ?string $preheader = null;
 
+    #[Assert\When(expression: '!this.isDraft()', constraints: [new Assert\NotBlank()])]
     #[ORM\Column(type: Types::TEXT)]
     public string $bodyMarkdown = '' {
         set(?string $value) => (string) $value;
@@ -189,14 +227,34 @@ class Campaign implements IdInterface, Stringable
         $this->initTimestampableProperties();
     }
 
+    /** Copy authored settings only; delivery history and analytics identity belong to the original. */
+    public function duplicate(): self
+    {
+        $copy = new self();
+        $copy->audience = $this->audience;
+        $copy->subject = $this->subject;
+        $copy->workingTitle = $this->workingTitle;
+        $copy->internalNotes = $this->internalNotes;
+        $copy->preheader = $this->preheader;
+        $copy->bodyMarkdown = $this->bodyMarkdown;
+        $copy->translations = $this->translations;
+        $copy->segment = $this->segment;
+        $copy->emailLayout = $this->emailLayout;
+        $copy->senderProfile = $this->senderProfile;
+        $copy->transactional = $this->transactional;
+        $copy->rateSeconds = $this->rateSeconds;
+
+        return $copy;
+    }
+
     /**
      * What one reader is sent, resolved at send time.
      *
      * Three steps: the locale as the contact carries it, then its language part
      * — `de-ch` reads the German written for eight languages over seventeen
      * hosts — then the campaign's own text. So a missing translation sends the
-     * default rather than an empty mail, and a body is never frozen per
-     * recipient: fixing a typo mid-campaign still reaches whoever is left.
+     * default rather than an empty mail. Content belongs to the campaign;
+     * admin and API editing stop when delivery is authorized.
      *
      * A translation may carry only some of the three fields; each falls back on
      * its own, so translating the subject without the preheader is allowed and
@@ -467,6 +525,19 @@ class Campaign implements IdInterface, Stringable
         }
     }
 
+    public function getTitle(): string
+    {
+        return '' !== trim($this->workingTitle) ? $this->workingTitle : $this->subject;
+    }
+
+    #[Assert\Callback]
+    public function validateTitle(ExecutionContextInterface $context): void
+    {
+        if ('' === trim($this->getTitle())) {
+            $context->buildViolation('newsletter.editorial.titleRequired')->atPath('workingTitle')->addViolation();
+        }
+    }
+
     public function getStatusLabel(): string
     {
         return $this->status->value;
@@ -505,7 +576,6 @@ class Campaign implements IdInterface, Stringable
     public function revertToDraft(): self
     {
         $this->status = CampaignStatus::Draft;
-        $this->scheduledAt = null;
 
         return $this;
     }
@@ -553,8 +623,7 @@ class Campaign implements IdInterface, Stringable
     public function isTransactional(): bool
     {
         return $this->transactional
-            || true === $this->audience?->transactional
-            || 'personal' === ($this->emailLayout ?? $this->audience?->emailLayout);
+            || true === $this->audience?->transactional;
     }
 
     public function incrementSent(): self

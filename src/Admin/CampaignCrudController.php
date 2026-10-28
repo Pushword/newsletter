@@ -13,6 +13,7 @@ use EasyCorp\Bundle\EasyAdminBundle\Config\Actions;
 use EasyCorp\Bundle\EasyAdminBundle\Config\Crud;
 use EasyCorp\Bundle\EasyAdminBundle\Config\Filters;
 use EasyCorp\Bundle\EasyAdminBundle\Config\KeyValueStore;
+use EasyCorp\Bundle\EasyAdminBundle\Context\AdminContext;
 use EasyCorp\Bundle\EasyAdminBundle\Controller\AbstractCrudController;
 use EasyCorp\Bundle\EasyAdminBundle\Field\AssociationField;
 use EasyCorp\Bundle\EasyAdminBundle\Field\BooleanField;
@@ -41,9 +42,13 @@ use Pushword\Newsletter\Service\CampaignSender;
 use Pushword\Newsletter\Service\EmailTemplateRegistry;
 use Pushword\Newsletter\Service\MailRenderer;
 use Pushword\Newsletter\Service\NewsletterMailer;
+use Pushword\Newsletter\Service\SenderProfileRegistry;
 use Pushword\Newsletter\Utm\UtmTag;
+use Pushword\Newsletter\Validation\CampaignPreflight;
+use Pushword\Newsletter\Validation\CampaignValidationFailed;
 use Symfony\Component\HttpFoundation\RedirectResponse;
 use Symfony\Component\HttpFoundation\Request;
+use Symfony\Component\HttpFoundation\RequestStack;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\Routing\Generator\UrlGeneratorInterface;
 use Throwable;
@@ -65,12 +70,38 @@ class CampaignCrudController extends AbstractCrudController
         private readonly EmailTemplateRegistry $emailTemplates,
         private readonly MailRenderer $renderer,
         private readonly SiteRegistry $sites,
+        private readonly RequestStack $requests,
+        private readonly CampaignPreflight $preflight,
+        private readonly SenderProfileRegistry $senderProfiles,
     ) {
     }
 
     public static function getEntityFqcn(): string
     {
         return Campaign::class;
+    }
+
+    #[Override]
+    public function createEntity(string $entityFqcn): Campaign
+    {
+        $id = $this->requests->getCurrentRequest()?->query->getInt('duplicate') ?? 0;
+        if (0 === $id) {
+            return new Campaign();
+        }
+
+        $this->denyAccessUnlessGranted('ROLE_EDITOR');
+        $original = $this->entityManager->find(Campaign::class, $id) ?? throw $this->createNotFoundException();
+
+        return $original->duplicate();
+    }
+
+    /** @param AdminContext<Campaign> $context */
+    #[Override]
+    protected function getRedirectResponseAfterSave(AdminContext $context, string $action): RedirectResponse
+    {
+        $context->getRequest()->query->remove('duplicate');
+
+        return parent::getRedirectResponseAfterSave($context, $action);
     }
 
     #[Override]
@@ -87,10 +118,10 @@ class CampaignCrudController extends AbstractCrudController
             ->setEntityLabelInPlural('newsletter.campaign.label.plural')
             ->setDefaultSort(['id' => 'DESC'])
             ->showEntityActionsInlined()
-            ->setSearchFields(['subject']);
+            ->setSearchFields(['subject', 'workingTitle']);
 
         if (class_exists(EditorjsType::class)) {
-            return $crud->addFormTheme('@PushwordAdminBlockEditor/editorjs_widget.html.twig');
+            return $crud->addFormTheme('@PushwordNewsletter/admin/block_editor_theme.html.twig');
         }
 
         return $crud;
@@ -99,7 +130,7 @@ class CampaignCrudController extends AbstractCrudController
     #[Override]
     public function configureFilters(Filters $filters): Filters
     {
-        return $filters->add('audience')->add('status');
+        return $filters->add('audience')->add('status')->add('editorialStage');
     }
 
     #[Override]
@@ -110,7 +141,12 @@ class CampaignCrudController extends AbstractCrudController
         }
 
         $campaign = $this->getContext()?->getEntity()->getInstance();
-        if (! $campaign instanceof Campaign || ! $campaign->audience instanceof Audience) {
+        if (! $campaign instanceof Campaign) {
+            return $responseParameters;
+        }
+
+        $responseParameters->set('preflight_issues', $this->preflight->check($campaign));
+        if (! $campaign->audience instanceof Audience) {
             return $responseParameters;
         }
 
@@ -118,19 +154,27 @@ class CampaignCrudController extends AbstractCrudController
         $site = $this->sites->get($audience->mainHost);
         $contact = new Contact($audience, 'preview@example.tld');
         $contact->name = 'Alex';
+        $contact->customProperties = ['firstName' => 'Alex'];
         $contact->locale = $site->locale;
 
-        $responseParameters->set('preview_html', $this->renderer->html(
-            $audience,
-            $contact,
-            $campaign->subject,
-            $campaign->bodyMarkdown,
-            $campaign->preheader,
-            $campaign->isTransactional() ? null : $site->baseUrl.'/#unsubscribe',
-            null,
-            locale: $site->locale,
-            emailLayout: $campaign->emailLayout,
-        ));
+        try {
+            $sender = $this->senderProfiles->resolve($campaign);
+            $responseParameters->set('preview_sender', ($sender->fromName ?? $audience->fromName).' <'.($sender->fromEmail ?? $audience->fromEmail).'>');
+            $responseParameters->set('preview_html', $this->renderer->html(
+                $audience,
+                $contact,
+                $campaign->subject,
+                $campaign->bodyMarkdown,
+                $campaign->preheader,
+                $campaign->isTransactional() ? null : $site->baseUrl.'/#unsubscribe',
+                null,
+                sendContext: $sender,
+                locale: $site->locale,
+                emailLayout: $campaign->emailLayout,
+            ));
+        } catch (Throwable) {
+            // The preflight report already explains why rendering failed.
+        }
 
         return $responseParameters;
     }
@@ -138,17 +182,23 @@ class CampaignCrudController extends AbstractCrudController
     #[Override]
     public function configureActions(Actions $actions): Actions
     {
+        $duplicate = Action::new('duplicate', 'newsletter.campaign.action.duplicate', 'fa fa-copy')
+            ->linkToUrl(fn (Campaign $campaign): string => $this->urlGenerator->generate('admin_newsletter_campaign_new', ['duplicate' => $campaign->id]))
+            ->setCssClass('btn btn-outline-secondary');
+
+        $calendar = Action::new('calendar', 'newsletter.calendar.title', 'fa fa-calendar')
+            ->linkToRoute('admin_newsletter_campaign_calendar')
+            ->createAsGlobalAction();
+
+        $catalogue = Action::new('catalogue', 'newsletter.catalogue.browseBySite', 'fa fa-filter')
+            ->linkToRoute('admin_newsletter_campaign_catalogue')
+            ->createAsGlobalAction();
+
         $send = Action::new('send', 'newsletter.campaign.action.send', 'fa fa-paper-plane')
             ->linkToCrudAction('send')
             ->setTemplatePath('@pwAdmin/crud/action_post.html.twig')
             ->displayIf(static fn (Campaign $campaign): bool => $campaign->isDraft())
             ->setCssClass('btn btn-success');
-
-        $schedule = Action::new('schedule', 'newsletter.campaign.action.schedule', 'fa fa-clock')
-            ->linkToCrudAction('schedule')
-            ->setTemplatePath('@pwAdmin/crud/action_post.html.twig')
-            ->displayIf(static fn (Campaign $campaign): bool => $campaign->isDraft())
-            ->setCssClass('btn btn-primary');
 
         $cancelSchedule = Action::new('cancelSchedule', 'newsletter.campaign.action.cancelSchedule', 'fa fa-ban')
             ->linkToCrudAction('cancelSchedule')
@@ -177,18 +227,22 @@ class CampaignCrudController extends AbstractCrudController
         foreach ([Crud::PAGE_DETAIL, Crud::PAGE_EDIT] as $page) {
             $actions = $actions
                 ->add($page, $send)
-                ->add($page, $schedule)
                 ->add($page, $cancelSchedule)
                 ->add($page, $preview)
                 ->add($page, $recipients)
+                ->add($page, $duplicate)
                 ->add($page, $sendTest);
         }
 
         return $actions
             ->disable(Action::SAVE_AND_ADD_ANOTHER)
             ->update(Crud::PAGE_NEW, Action::SAVE_AND_RETURN, static fn (Action $action): Action => $action->setLabel('newsletter.campaign.action.saveDraft'))
-            ->update(Crud::PAGE_INDEX, Action::NEW, static fn (Action $action): Action => $action->setLabel('newsletter.campaign.action.create'))
+            ->update(Crud::PAGE_INDEX, Action::NEW, static fn (Action $action): Action => $action
+                ->setLabel('newsletter.campaign.action.create')
+                ->linkToRoute('admin_newsletter_campaign_new'))
             ->add(Crud::PAGE_INDEX, Action::DETAIL)
+            ->add(Crud::PAGE_INDEX, $catalogue)
+            ->add(Crud::PAGE_INDEX, $calendar)
             ->update(Crud::PAGE_INDEX, Action::DETAIL, static fn (Action $action): Action => $action
                 ->setLabel('newsletter.campaign.action.review')
                 ->setCssClass('action-detail btn btn-outline-primary'))
@@ -199,14 +253,27 @@ class CampaignCrudController extends AbstractCrudController
     public function configureFields(string $pageName): iterable
     {
         $isForm = \in_array($pageName, [Crud::PAGE_NEW, Crud::PAGE_EDIT], true);
-        $audienceField = AssociationField::new('audience', 'newsletter.campaign.field.audience')
+        $campaign = $this->getContext()?->getEntity()->getInstance();
+        $preparing = ! $campaign instanceof Campaign || $campaign->isDraft();
+        $audienceField = AssociationField::new('audience', 'newsletter.campaign.field.audience')->setFormTypeOption('disabled', ! $preparing)
+            ->setRequired(false)
             ->setFormTypeOption('label_attr', ['id' => 'newsletter-campaign-audience-label'])
             ->setFormTypeOption('attr', ['aria-labelledby' => 'newsletter-campaign-audience-label']);
+
+        yield FormField::addFieldset('newsletter.editorial.preparation')->setIcon('fa fa-calendar');
+        yield TextField::new('workingTitle', 'newsletter.editorial.workingTitle')->setRequired(false)->hideOnIndex()->setColumns('col-12');
+        yield TextField::new('title', 'newsletter.editorial.workingTitle')->onlyOnIndex()->setSortable(false);
+        yield ChoiceField::new('editorialStage', 'newsletter.editorial.stage')
+            ->setColumns('col-12')
+            ->renderAsNativeWidget()
+            ->setFormTypeOption('placeholder', false)
+            ->setFormTypeOption('disabled', ! $preparing);
+        yield TextareaField::new('internalNotes', 'newsletter.editorial.internalNotes')->setRequired(false)->hideOnIndex()->setColumns('col-12')->setNumOfRows(3);
 
         if ($isForm) {
             yield FormField::addFieldset('newsletter.campaign.fieldset.design')->setIcon('fa fa-palette');
             yield $audienceField->setColumns('col-12');
-            yield ChoiceField::new('emailLayout', 'newsletter.campaign.design.label')
+            yield ChoiceField::new('emailLayout', 'newsletter.campaign.design.label')->setFormTypeOption('disabled', ! $preparing)
                 ->setChoices([
                     'newsletter.campaign.design.inherit' => '',
                     'newsletter.design.simple' => 'simple',
@@ -221,8 +288,14 @@ class CampaignCrudController extends AbstractCrudController
                 ->setFormTypeOption('attr', ['data-pw-campaign-design' => json_encode($this->audienceDesigns(), \JSON_THROW_ON_ERROR)]);
         }
 
+        yield ChoiceField::new('senderProfile', 'newsletter.sender.label')
+            ->setChoices(['newsletter.sender.inherit' => '', ...$this->senderProfiles->choices()])
+            ->renderAsNativeWidget()->setRequired(false)->hideOnIndex()->setColumns('col-12')
+            ->setFormTypeOption('placeholder', false)
+            ->setFormTypeOption('disabled', ! $preparing);
+
         yield FormField::addFieldset('newsletter.campaign.fieldset.content')->setIcon('fa fa-pen-nib');
-        yield TextField::new('subject', 'newsletter.campaign.field.subject')->setColumns('col-12');
+        yield TextField::new('subject', 'newsletter.campaign.field.subject')->setFormTypeOption('disabled', ! $preparing)->setRequired(false)->hideOnIndex()->setColumns('col-12');
         yield ChoiceField::new('status', 'newsletter.campaign.field.status')
             ->renderAsBadges([
                 CampaignStatus::Draft->value => 'secondary',
@@ -234,17 +307,17 @@ class CampaignCrudController extends AbstractCrudController
         yield DateTimeField::new('sendDate', 'newsletter.campaign.field.sendDate')->onlyOnIndex()->setSortable(false)->formatValue(
             static fn (mixed $value): string => $value instanceof DateTimeInterface ? $value->format('d/m/Y H:i') : '—',
         );
-        yield TextField::new('preheader', 'newsletter.campaign.field.preheader')->hideOnIndex()->setColumns('col-12')
+        yield TextField::new('preheader', 'newsletter.campaign.field.preheader')->setFormTypeOption('disabled', ! $preparing)->hideOnIndex()->setColumns('col-12')
             ->setHelp('newsletter.campaign.field.preheader.help')
             ->setFormTypeOption('context_help', true);
-        yield $this->bodyField();
+        yield $this->bodyField()->setFormTypeOption('disabled', ! $preparing);
 
         yield FormField::addFieldset('newsletter.campaign.fieldset.audience')->setIcon('fa fa-users');
         if (! $isForm) {
             yield $audienceField;
         }
 
-        yield CriteriaField::new('segmentAsJson', 'newsletter.campaign.field.segment', CriteriaController::SIDE_CONTACT, $this->urlGenerator)
+        yield CriteriaField::new('segmentAsJson', 'newsletter.campaign.field.segment', CriteriaController::SIDE_CONTACT, $this->urlGenerator)->setFormTypeOption('disabled', ! $preparing)
             ->setNumOfRows(6)
             ->setHelp('newsletter.campaign.field.segment.help')
             ->setFormTypeOption('context_help', true);
@@ -252,6 +325,7 @@ class CampaignCrudController extends AbstractCrudController
             ->setHelp('newsletter.campaign.fieldset.scheduleHelp')
             ->setFormTypeOption('context_help', true);
         yield DateTimeField::new('scheduledAt', 'newsletter.campaign.field.scheduledAt')->hideOnIndex()
+            ->setFormTypeOption('disabled', ! $preparing)
             ->setHelp('newsletter.campaign.field.scheduledAt.help')
             ->setFormTypeOption('context_help', 'newsletterHelpSchedule');
         yield FormField::addFieldset('newsletter.campaign.fieldset.languages')->setIcon('fa fa-language')
@@ -259,7 +333,7 @@ class CampaignCrudController extends AbstractCrudController
             ->hideOnIndex()
             ->collapsible()
             ->renderCollapsed();
-        yield TextareaField::new('translationsAsJson', 'newsletter.campaign.field.translations')
+        yield TextareaField::new('translationsAsJson', 'newsletter.campaign.field.translations')->setFormTypeOption('disabled', ! $preparing)
             ->hideOnIndex()
             ->setRequired(false)
             ->setNumOfRows(10)
@@ -268,15 +342,15 @@ class CampaignCrudController extends AbstractCrudController
         yield FormField::addFieldset('newsletter.campaign.fieldset.advanced')->setIcon('fa fa-gear')
             ->collapsible()
             ->renderCollapsed();
-        yield TextField::new('slug', 'newsletter.campaign.field.slug')->hideOnIndex()
+        yield TextField::new('slug', 'newsletter.campaign.field.slug')->setFormTypeOption('disabled', ! $preparing)->hideOnIndex()
             ->setRequired(false)
             ->setHelp('newsletter.campaign.field.slug.help')
             ->setFormTypeOption('context_help', true);
-        yield IntegerField::new('rateSeconds', 'newsletter.campaign.field.rateSeconds')->hideOnIndex()
+        yield IntegerField::new('rateSeconds', 'newsletter.campaign.field.rateSeconds')->setFormTypeOption('disabled', ! $preparing)->hideOnIndex()
             ->setRequired(false)
             ->setHelp('newsletter.campaign.field.rateSeconds.help')
             ->setFormTypeOption('context_help', 'newsletterHelpCadence');
-        yield BooleanField::new('transactional', 'newsletter.campaign.field.transactional')->hideOnIndex()
+        yield BooleanField::new('transactional', 'newsletter.campaign.field.transactional')->setFormTypeOption('disabled', ! $preparing)->hideOnIndex()
             ->setHelp('newsletter.campaign.field.transactional.help')
             ->setFormTypeOption('context_help', 'newsletterHelpTransactional');
 
@@ -366,8 +440,12 @@ class CampaignCrudController extends AbstractCrudController
         }
 
         try {
-            $count = $this->campaignSender->arm($campaign);
-            $this->addFlash('success', \sprintf('%d recipient(s) queued at 1 mail / %d s.', $count, $campaign->getEffectiveRateSeconds()));
+            $count = $this->campaignSender->send($campaign);
+            $this->addFlash('success', $campaign->isScheduled() ? 'newsletter.calendar.scheduled' : \sprintf('%d recipient(s) queued at 1 mail / %d s.', $count, $campaign->getEffectiveRateSeconds()));
+        } catch (CampaignValidationFailed) {
+            $this->addFlash('danger', 'newsletter.preflight.blocked');
+
+            return $this->redirectToRoute('admin_newsletter_campaign_detail', ['entityId' => $campaign->id]);
         } catch (Throwable $throwable) {
             $this->addFlash('danger', $throwable->getMessage());
         }
@@ -393,9 +471,12 @@ class CampaignCrudController extends AbstractCrudController
         } elseif (! $when instanceof DateTimeImmutable) {
             $this->addFlash('danger', 'newsletter.campaign.flash.noDate');
         } else {
-            $campaign->schedule($when);
-            $this->entityManager->flush();
-            $this->addFlash('success', \sprintf('Scheduled for %s.', $when->format('d M Y H:i')));
+            try {
+                $this->campaignSender->schedule($campaign, $when);
+                $this->addFlash('success', 'newsletter.calendar.scheduled');
+            } catch (LogicException $exception) {
+                $this->addFlash('danger', $exception->getMessage());
+            }
         }
 
         return new RedirectResponse($this->indexUrl());
@@ -511,7 +592,7 @@ class CampaignCrudController extends AbstractCrudController
             }
 
             try {
-                $this->mailer->sendTest($audience, $content['subject'], $content['bodyMarkdown'], $content['preheader'], $address, UtmTag::forCampaign($campaign), $locale, $campaign->isTransactional(), $campaign->emailLayout);
+                $this->mailer->sendTest($audience, $content['subject'], $content['bodyMarkdown'], $content['preheader'], $address, UtmTag::forCampaign($campaign), $locale, $campaign->isTransactional(), $campaign->emailLayout, $this->senderProfiles->resolve($campaign));
                 $sent[] = $address;
             } catch (Throwable $throwable) {
                 $failed[] = $address.' ('.$throwable->getMessage().')';
@@ -532,6 +613,7 @@ class CampaignCrudController extends AbstractCrudController
         if (! class_exists(EditorjsType::class)) {
             return TextareaField::new('bodyMarkdown', 'newsletter.campaign.field.body')
                 ->hideOnIndex()
+                ->setHelp('newsletter.campaign.field.body.help')
                 ->setNumOfRows(18)->setColumns('col-12');
         }
 
@@ -542,6 +624,7 @@ class CampaignCrudController extends AbstractCrudController
         // campaign has no page, so it stays empty but the key must exist.
         return Field::new('bodyMarkdown', 'newsletter.campaign.field.body')
             ->setColumns('col-12')
+            ->setHelp('newsletter.campaign.field.body.help')
             ->setFormType(EditorjsType::class)
             ->setFormTypeOptions(['required' => false, 'attr' => ['page_host' => $host, 'page_id' => '']])
             ->hideOnIndex();

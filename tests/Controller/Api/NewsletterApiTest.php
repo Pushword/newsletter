@@ -12,6 +12,7 @@ use Pushword\Core\Repository\UserRepository;
 use Pushword\Newsletter\Entity\Audience;
 use Pushword\Newsletter\Entity\Automation;
 use Pushword\Newsletter\Entity\Campaign;
+use Pushword\Newsletter\Entity\CampaignRecipient;
 use Pushword\Newsletter\Entity\ClickEvent;
 use Pushword\Newsletter\Entity\Contact;
 use Pushword\Newsletter\Entity\ContactEvent;
@@ -64,11 +65,82 @@ final class NewsletterApiTest extends AbstractNewsletterTestCase
         parent::tearDown();
     }
 
+    public function testPreflightReportsStructuredIssuesAndRejectsSendAndUnknownSender(): void
+    {
+        $campaign = $this->createCampaign($this->createAudience());
+        $campaign->bodyMarkdown = '[Reserve]()';
+
+        $this->entityManager->flush();
+        $url = '/api/newsletter/campaign/'.$campaign->id;
+        $report = $this->request('GET', $url.'/check');
+        self::assertResponseIsSuccessful();
+        self::assertIsArray($report['issues']);
+        self::assertIsArray($report['issues'][0]);
+        self::assertSame('link.invalid', $report['issues'][0]['code']);
+        $blocked = $this->request('POST', $url.'/send');
+        self::assertResponseStatusCodeSame(422);
+        self::assertSame($report['issues'], $blocked['issues']);
+        $this->request('PATCH', $url, ['senderProfile' => 'unapproved@example.test']);
+        self::assertResponseStatusCodeSame(400);
+        $updated = $this->request('PATCH', $url, ['senderProfile' => 'editorial']);
+        self::assertResponseIsSuccessful();
+        self::assertSame('editorial', $updated['senderProfile']);
+    }
+
     public function testAnonymousAccessIsRefused(): void
     {
         $this->client->request(Request::METHOD_GET, '/api/newsletter/contact');
 
         self::assertSame(Response::HTTP_UNAUTHORIZED, $this->client->getResponse()->getStatusCode());
+    }
+
+    public function testDuplicateCreatesAnIndependentDraftFromASentCampaign(): void
+    {
+        $audience = $this->createAudience();
+        $contact = $this->createContact($audience, 'copy@example.tld');
+        $original = $this->createCampaign($audience, subject: 'Copyable campaign');
+        $original->translations = ['fr' => ['subject' => 'Une copie']];
+        $original->emailLayout = 'framed';
+        self::getContainer()->get(CampaignSender::class)->arm($original);
+        $original->incrementSent()->markSent();
+        $identity = $original->getUtmId();
+        $this->entityManager->flush();
+
+        $result = $this->request(Request::METHOD_POST, '/api/newsletter/campaign/'.$original->id.'/duplicate');
+        self::assertResponseStatusCodeSame(Response::HTTP_CREATED);
+        self::assertNotSame($original->id, $result['id']);
+        $copy = $this->entityManager->find(Campaign::class, $result['id']);
+        self::assertInstanceOf(Campaign::class, $copy);
+        self::assertTrue($copy->isDraft());
+        self::assertSame('Une copie', $copy->contentFor('fr')['subject']);
+        self::assertSame('framed', $copy->emailLayout);
+        self::assertSame($audience, $copy->audience);
+        self::assertNotSame($identity, $copy->getUtmId());
+        self::assertNull($copy->sentAt);
+        self::assertSame(0, $copy->sentCount);
+        $recipients = $this->entityManager->getRepository(CampaignRecipient::class);
+        self::assertSame(0, $recipients->count(['campaign' => $copy]));
+        self::assertSame(1, $recipients->count(['campaign' => $original, 'contact' => $contact]));
+        self::assertSame('sent', $original->getStatusLabel());
+
+        $this->request(Request::METHOD_POST, '/api/newsletter/campaign/2147483647/duplicate');
+        self::assertResponseStatusCodeSame(Response::HTTP_NOT_FOUND);
+    }
+
+    public function testDuplicateRequiresAnEditor(): void
+    {
+        $campaign = $this->createCampaign($this->createAudience());
+        $url = '/api/newsletter/campaign/'.$campaign->id.'/duplicate';
+        $this->client->request(Request::METHOD_POST, $url);
+        self::assertResponseStatusCodeSame(Response::HTTP_UNAUTHORIZED);
+
+        $user = $this->userRepository()->findOneBy(['email' => $this->userEmail]);
+        self::assertInstanceOf(User::class, $user);
+        $user->setRoles(['ROLE_USER']);
+        $this->entityManager->flush();
+        $this->request(Request::METHOD_POST, $url);
+        self::assertResponseStatusCodeSame(Response::HTTP_FORBIDDEN);
+        self::assertSame(1, $this->entityManager->getRepository(Campaign::class)->count(['audience' => $campaign->audience]));
     }
 
     public function testCreatingAnAudienceThroughTheApi(): void
@@ -1563,6 +1635,61 @@ final class NewsletterApiTest extends AbstractNewsletterTestCase
     private function runner(): AutomationRunner
     {
         return self::getContainer()->get(AutomationRunner::class);
+    }
+
+    public function testAnIdeaCanBeSavedWithoutSendContentButCannotBeSent(): void
+    {
+        $data = $this->request('POST', '/api/newsletter/campaign', [
+            'workingTitle' => 'Winter idea',
+            'internalNotes' => 'Keep this private',
+            'editorialStage' => 'review',
+            'scheduledAt' => '2030-03-31T09:30:00+02:00',
+        ]);
+        self::assertResponseStatusCodeSame(201);
+        $id = $this->id($data);
+
+        try {
+            self::assertNull($data['audience']);
+            self::assertSame('draft', $data['status']);
+            self::assertSame('review', $data['editorialStage']);
+            $this->request('POST', '/api/newsletter/campaign/'.$id.'/send');
+            self::assertResponseStatusCodeSame(422);
+            $this->request('POST', '/api/newsletter/campaign/'.$id.'/schedule', ['scheduledAt' => '2030-03-31T09:30:00+02:00']);
+            self::assertResponseStatusCodeSame(422);
+            $this->request('PATCH', '/api/newsletter/campaign/'.$id, ['editorialStage' => 'unknown']);
+            self::assertResponseStatusCodeSame(400);
+            $this->request('PATCH', '/api/newsletter/campaign/'.$id, ['scheduledAt' => 'not a date']);
+            self::assertResponseStatusCodeSame(400);
+            $data = $this->request('GET', '/api/newsletter/campaign/'.$id);
+            self::assertSame('draft', $data['status']);
+            self::assertSame('review', $data['editorialStage']);
+        } finally {
+            $this->request('DELETE', '/api/newsletter/campaign/'.$id);
+        }
+    }
+
+    public function testApiSendHonorsAFutureDateEvenWithoutEditorialReview(): void
+    {
+        $audience = $this->createAudience();
+        $data = $this->request('POST', '/api/newsletter/campaign', [
+            'audience' => $audience->slug,
+            'subject' => 'Future newsletter',
+            'bodyMarkdown' => 'Hello readers',
+            'scheduledAt' => '2030-03-31T09:30:00+02:00',
+        ]);
+        self::assertResponseStatusCodeSame(201);
+        $id = $this->id($data);
+        $data = $this->request('POST', '/api/newsletter/campaign/'.$id.'/send');
+        self::assertResponseIsSuccessful();
+        self::assertSame('scheduled', $data['status']);
+        self::assertSame('draft', $data['editorialStage']);
+        self::assertIsArray($data['stats']);
+        self::assertSame(0, $data['stats']['recipients']);
+        self::assertEmailCount(0);
+        $data = $this->request('POST', '/api/newsletter/campaign/'.$id.'/send');
+        self::assertSame('scheduled', $data['status']);
+        $this->request('PATCH', '/api/newsletter/campaign/'.$id, ['scheduledAt' => null]);
+        self::assertResponseStatusCodeSame(400);
     }
 
     private function userRepository(): UserRepository

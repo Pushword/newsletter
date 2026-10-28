@@ -73,6 +73,40 @@ newsletter:
     status:
       active: Active
       paused: En pause
+  block:
+    content: "Contenu (Markdown)"
+    empty: "Aucun contenu correspondant."
+    failed: "Impossible de charger le contenu."
+    help: "Combinez texte, images, liens, citations ou signature. Chaque insertion crée une copie indépendante et modifiable."
+    library: "Bibliothèque"
+    loading: "Chargement…"
+    name: "Nom du bloc"
+    nameRequired: "Renseignez un nom et un contenu."
+    plural: "Blocs réutilisables"
+    refresh: "Actualiser depuis la source"
+    replace: "Remplacer ce bloc par la version actuelle de sa source ? Les retouches de cette copie seront remplacées."
+    save: "Enregistrer une copie dans la bibliothèque"
+    saved: "Copie enregistrée dans la bibliothèque."
+    search: "Rechercher"
+    singular: "Bloc réutilisable"
+    source: "Source"
+  calendar:
+    agenda: "Agenda"
+    conflict: "Cette newsletter a été modifiée. Rechargez la page avant de la déplacer à nouveau."
+    empty: "Aucune newsletter sur cette période."
+    error: "La date n’a pas pu être enregistrée. La date précédente a été rétablie."
+    help: "Déplacez un brouillon pour changer sa date, ou ouvrez-le pour modifier la date dans le formulaire. Seul Envoyer autorise l’envoi. Les newsletters programmées, envoyées et externes sont en lecture seule ici."
+    javascript: "Activez JavaScript pour utiliser le calendrier, ou utilisez la liste."
+    list: "Liste"
+    month: "Mois"
+    noUndated: "Toutes les newsletters ont une date."
+    saved: "Date enregistrée. Cette newsletter reste un brouillon."
+    scheduled: "L’envoi est autorisé pour la date choisie."
+    title: "Calendrier"
+    undated: "Sans date"
+    views: "Vues des newsletters"
+    week: "Semaine"
+    year: "Année"
   campaign:
     label:
       plural: Newsletters
@@ -80,11 +114,11 @@ newsletter:
     action:
       cancelSchedule: Annuler la programmation
       create: Créer une newsletter
+      duplicate: Dupliquer en brouillon
       previewSegment: Compter l'audience
       recipients: Destinataires
       review: Vérifier et envoyer
       saveDraft: Enregistrer le brouillon
-      schedule: Programmer
       send: Envoyer
       sendTest: Envoyer un test
     design:
@@ -95,7 +129,7 @@ newsletter:
       empty: Choisissez une audience pour voir l'habillage utilisé.
       inherit: Utiliser l'habillage de l'audience
       label: Habillage de cette campagne
-      personal: "Messages transactionnels uniquement : contenu et signature de « %audience% », sans lien ni en-têtes de désinscription."
+      personal: "Contenu et signature de « %audience% ». Les messages marketing conservent leur lien de désabonnement."
       personalCustomize: "Personnaliser la signature"
       personalEdit: "Modifier la signature de l’audience (nouvel onglet)"
       personalWarning: "La modification de cette signature affecte tous les mails personnels envoyés à cette audience."
@@ -110,10 +144,11 @@ newsletter:
       languages: Traductions
       performance: Résultats de l'envoi
       schedule: 4. Préparer l'envoi
-      scheduleHelp: Enregistrez votre brouillon, envoyez un test, puis envoyez ou programmez depuis la fiche de la newsletter.
+      scheduleHelp: "Enregistrez le brouillon et envoyez un test. Seul Envoyer autorise l’envoi, à la date choisie ou immédiatement."
     field:
       audience: Audience
       body: Contenu
+      body.help: "Personnalisez avec %firstName|à vous%, %name% ou %email%. Le texte après | remplace le prénom manquant."
       bounced: Rejetés
       clicks: Clics
       failed: Échecs
@@ -123,7 +158,7 @@ newsletter:
       rateSeconds.help: Secondes entre deux envois. Laisser vide pour utiliser la cadence de l'audience.
       recipients: Destinataires
       scheduledAt: Programmée pour
-      scheduledAt.help: Facultatif. Après enregistrement, utilisez « Programmer » pour confirmer l'envoi à cette date.
+      scheduledAt.help: "Facultatif. Cette date n’autorise aucun envoi. Après enregistrement, utilisez Envoyer : une date future programme l’envoi ; une date passée ou vide le démarre immédiatement."
       segment: Segment
       segment.help: 'À qui part cette newsletter. Sans condition, toute l''audience inscrite ; « Éditer en texte » redonne le JSON stocké.'
       sendDate: Date d'envoi
@@ -179,10 +214,12 @@ newsletter:
       invalidLocale: 'La traduction « %locale% » doit être un objet contenant subject, preheader et bodyMarkdown.'
   catalogue:
     actions: Actions
+    browseBySite: Filtrer par site
     createNative: Créer dans Pushword
     emptyHelp: 'Choisissez un outil pour créer une campagne. Les campagnes disponibles apparaîtront ici.'
     emptyTitle: 'Aucune campagne disponible'
     filters: Filtrer les campagnes
+    host: Site
     manageNative: Gérer dans Pushword
     noResultsHelp: 'Essayez une autre recherche ou réinitialisez les filtres pour voir les campagnes disponibles.'
     noResultsTitle: 'Aucune campagne ne correspond'
@@ -192,6 +229,7 @@ newsletter:
     source: Source
     timezone: Heures affichées dans le fuseau %timezone%.
     unknown: Non renseigné
+    unknownHost: Site inconnu
   confirm:
     body: Merci pour votre inscription ! Pour commencer à recevoir nos mails, confirmez votre adresse e-mail ci-dessous.
     button: Je confirme mon inscription
@@ -346,7 +384,7 @@ newsletter:
     mobile: Mobile
     otherTemplates: "Autres modèles"
     personal: Mail personnel
-    personalHelp: "Contenu et signature, sans désinscription. Messages transactionnels uniquement."
+    personalHelp: "Contenu et signature. Les messages marketing conservent leur lien de désabonnement."
     personalSignature: "Signature du mail personnel"
     preview: Aperçu en direct
     previewHelp: Aucun email n'est envoyé depuis cet aperçu. Le rendu peut varier selon la messagerie.
@@ -380,6 +418,15 @@ newsletter:
     view: Espace de travail de l'habillage
     viewport: Largeur de l'aperçu en pixels
     wrapped: Avec cadre
+  editorial:
+    draft: "Brouillon"
+    internalNotes: "Notes internes"
+    preparation: "Préparation"
+    ready: "Prête"
+    review: "À vérifier"
+    stage: "Étape de préparation"
+    titleRequired: "Saisissez un titre de travail ou un objet de mail."
+    workingTitle: "Titre de travail"
   email:
     unsubscribe: Se désinscrire
   form:
@@ -403,6 +450,24 @@ newsletter:
   resubscribed:
     body: Vous recevrez de nouveau les messages de %audience%.
     title: Réinscription effectuée
+  preflight:
+    audienceMissing: "Choisissez une audience."
+    blockUnavailable: "Ce bloc ou sa source est indisponible."
+    blocked: "L’envoi a été bloqué. Corrigez les erreurs puis choisissez à nouveau Envoyer."
+    bodyMarkdownMissing: "Rédigez le message."
+    error: "À corriger"
+    linkInvalid: "Un lien a une destination vide ou non prise en charge."
+    passed: "Aucune erreur bloquante détectée. Les contrôles seront répétés au départ de l’envoi."
+    renderFailed: "Impossible de générer le message. Vérifiez son contenu et son habillage."
+    senderInvalid: "Choisissez un profil d’expéditeur disponible."
+    subjectLong: "L’objet dépasse 80 caractères et risque d’être tronqué dans la boîte de réception."
+    subjectMissing: "Rédigez l’objet."
+    title: "Avant l’envoi"
+    unsubscribeMissing: "Le lien de désabonnement manque dans ce message marketing."
+    warning: "Conseil"
+  sender:
+    inherit: "Utiliser l’expéditeur de l’audience"
+    label: "Profil d’expéditeur"
   statistics:
     aboutActivity: "À propos de ces événements"
     aboutContacts: "À propos du décompte de la base"
@@ -614,6 +679,8 @@ newsletter:
     campaignrecipientEmptyTitle: L'envoi n'a pas encore commencé
     contactEmptyHint: Inscrivez un contact dans une audience pour commencer à construire votre liste d'abonnés.
     contactEmptyTitle: Faites connaissance avec vos abonnés
+    emailblockEmptyHint: "Enregistrez vos contenus fréquents, puis insérez une copie modifiable dans vos newsletters."
+    emailblockEmptyTitle: "Créez votre premier bloc réutilisable"
     emailtemplateEmptyHint: Nommez votre modèle, ajoutez un en-tête et un pied de page, puis sélectionnez-le dans une newsletter.
     emailtemplateEmptyTitle: Créez votre premier modèle personnalisé
     filterAll: Toutes
@@ -631,7 +698,7 @@ newsletterHelpIdentifier: "Email ou téléphone requis. Sans adresse email, aucu
 newsletterHelpMoveSubscription: "Modifier ce champ déplace l’inscription."
 newsletterHelpPhone: "Sans adresse email, ce contact ne reçoit aucun mail."
 newsletterHelpRates: "Taux calculés sur les envois effectués."
-newsletterHelpSchedule: "Enregistrez le brouillon, puis confirmez avec « Programmer »."
+newsletterHelpSchedule: "Enregistrez le brouillon, puis utilisez « Envoyer » pour autoriser l’envoi."
 newsletterHelpSharedTemplate: "Les modifications s’appliquent à toutes les audiences et campagnes utilisant ce modèle."
 newsletterHelpTransactional: "Sans lien ni en-tête de désinscription. Messages de service uniquement."
 newsletterHelpUtmSource: "Laissez vide pour conserver les liens inchangés."

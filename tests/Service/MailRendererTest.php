@@ -23,6 +23,64 @@ final class MailRendererTest extends AbstractNewsletterTestCase
 {
     private const string UNSUBSCRIBE = 'https://localhost.dev/newsletter/unsubscribe/abcdef';
 
+    /** @return iterable<string, array{mixed, string}> */
+    public static function firstNames(): iterable
+    {
+        yield 'explicit name' => ['  Anne-Marie  ', 'Anne-Marie'];
+        yield 'missing' => [null, 'there'];
+        yield 'empty' => ['  ', 'there'];
+        yield 'wrong type' => [['unusable'], 'there'];
+        yield 'literal placeholder' => ['%email%', '%email%'];
+    }
+
+    public function testButtonStylesRemainUsableWithoutWebsiteCss(): void
+    {
+        $audience = $this->createAudience();
+        $contact = $this->createContact($audience, 'reader@example.test');
+        $renderer = self::getContainer()->get(MailRenderer::class);
+        $body = '[Book](https://example.test/book){.link-btn} and [More](https://example.test/more){.link-btn-outline}';
+        $html = $renderer->html($audience, $contact, 'Subject', $body, null, self::UNSUBSCRIBE, null);
+        $links = new Crawler($html)->filter('a.link-btn, a.link-btn-outline');
+        self::assertCount(2, $links);
+        self::assertStringContainsString('display:inline-block', $links->first()->attr('style') ?? '');
+        self::assertStringContainsString('background-color:#1c1c1c', $links->first()->attr('style') ?? '');
+        self::assertStringContainsString('background-color:#fafafa', $links->last()->attr('style') ?? '');
+        self::assertStringContainsString('https://example.test/book', $renderer->text($audience, $contact, $body, null));
+    }
+
+    #[DataProvider('firstNames')]
+    public function testFirstNameUsesAnExplicitPropertyAndAnAuthoredFallback(mixed $firstName, string $expected): void
+    {
+        $audience = $this->createAudience();
+        $contact = $this->createContact($audience, 'reader@example.tld', customProperties: ['firstName' => $firstName]);
+        $contact->name = 'A full name that must not be split';
+
+        $renderer = self::getContainer()->get(MailRenderer::class);
+        $source = 'Hello %firstName|there%! %name% / %email%';
+        $personalized = 'Hello '.$expected.'! '.$contact->name.' / reader@example.tld';
+        self::assertSame($personalized, $renderer->subject($source, $contact));
+        self::assertStringContainsString($personalized, $renderer->text($audience, $contact, $source, self::UNSUBSCRIBE));
+        $html = $renderer->html($audience, $contact, $source, $source, $source, self::UNSUBSCRIBE, null);
+        self::assertSame($personalized, new Crawler($html)->filter('title')->text());
+        self::assertStringContainsString($personalized, new Crawler($html)->filter('body')->text());
+        self::assertCount(1, new Crawler($html)->filter('a[href="'.self::UNSUBSCRIBE.'"]'));
+        $contact->customProperties = [];
+        self::assertSame('Hello!', $renderer->subject('Hello%firstName%!', $contact));
+    }
+
+    public function testFirstNameCannotInsertMarkdownOrHtmlIntoTheMessage(): void
+    {
+        $audience = $this->createAudience();
+        $name = '[link](https://attacker.example) <img src=x onerror=alert(1)> **bold** "quote" & café';
+        $contact = $this->createContact($audience, 'reader@example.tld', customProperties: ['firstName' => $name]);
+        $renderer = self::getContainer()->get(MailRenderer::class);
+        $html = $renderer->html($audience, $contact, '%firstName%', 'Hello **%firstName%**.', null, self::UNSUBSCRIBE, null);
+        $crawler = new Crawler($html);
+        self::assertSame($name, $crawler->filter('p strong')->last()->text());
+        self::assertCount(0, $crawler->filter('img, a[href="https://attacker.example"]'));
+        self::assertStringContainsString($name, $renderer->text($audience, $contact, '%firstName%', self::UNSUBSCRIBE));
+    }
+
     public function testDefaultIdentityResolvesSiteNameAndYearInBothPartsAndCanBeCleared(): void
     {
         $audience = $this->createAudience();
@@ -62,11 +120,11 @@ final class MailRendererTest extends AbstractNewsletterTestCase
             $crawler = new Crawler($html);
             self::assertCount(0, $crawler->filter('table, hr'));
             self::assertSame('en', $crawler->filter('html')->attr('lang'));
-            foreach (['12 Baker Street', 'Newsletter footer', 'Hidden teaser', self::UNSUBSCRIBE, '©'] as $decoration) {
+            foreach (['12 Baker Street', 'Newsletter footer', 'Hidden teaser', '©'] as $decoration) {
                 self::assertStringNotContainsString($decoration, $html);
             }
 
-            self::assertSame('Hello Test.'.('' === $signature ? '' : "\n\n".$signature), $renderer->text($audience, $contact, 'Hello %name%.', self::UNSUBSCRIBE, $context));
+            self::assertSame('Hello Test.'.('' === $signature ? '' : "\n\n".$signature)."\n\n".self::UNSUBSCRIBE, $renderer->text($audience, $contact, 'Hello %name%.', self::UNSUBSCRIBE, $context));
             self::assertCount('' === $signature ? 0 : 1, $crawler->filter('a[href="https://localhost.dev/contact"]'));
         }
     }
