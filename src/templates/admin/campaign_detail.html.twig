@@ -75,6 +75,9 @@
           {% endfor %}
         </section>
       {% endif %}
+      {% if sms_configured|default(false) %}
+        {{ include('@PushwordNewsletter/admin/_campaign_sms.html.twig') }}
+      {% endif %}
       {% if has_body %}
         <details class="pw-campaign-disclosure" data-campaign-source>
           <summary>{{ 'newsletter.campaign.review.source'|trans }}</summary>
